@@ -7,6 +7,7 @@
  */
 
 import React from "react";
+import { ExchangeSyncPanel } from "@/components/ingesta/ExchangeSyncPanel";
 import { IngestaBandeja } from "@/components/ingesta/IngestaBandeja";
 
 export default function IngestaPage() {
@@ -18,10 +19,12 @@ export default function IngestaPage() {
           Ingesta de correos
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Revisá y aprobá los correos procesados por el orquestador local.
-          Los correos aprobados vinculan documentos al expediente del proceso.
+          Revisá y aprobá correos candidatos de Exchange. Los correos aprobados
+          vinculan documentos al expediente del proceso.
         </p>
       </div>
+
+      <ExchangeSyncPanel />
 
       {/* Bandeja */}
       <IngestaBandeja />

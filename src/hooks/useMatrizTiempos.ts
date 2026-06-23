@@ -1,12 +1,3 @@
-/**
- * matriz-tiempos — useMatrizTiempos hook.
- * Fetches GET /tiempos/matriz and exposes the heatmap matrix.
- *
- * Pattern mirrors useProcesos: placeholderData keeps the previous result
- * visible while refetching on filter change; staleTime=5min avoids
- * hammering the endpoint on every minor interaction.
- */
-
 import { useQuery } from "@tanstack/react-query";
 import { getMatrizTiempos } from "@/lib/api";
 import type { MatrizTiempos } from "@/types/etapa";
@@ -20,7 +11,7 @@ export function useMatrizTiempos(filtros: {
   return useQuery<MatrizTiempos, Error>({
     queryKey: ["matriz-tiempos", filtros],
     queryFn: () => getMatrizTiempos(filtros),
-    placeholderData: (prev) => prev,
+    placeholderData: (previous) => previous,
     staleTime: 5 * 60 * 1000,
   });
 }

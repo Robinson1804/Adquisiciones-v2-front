@@ -167,16 +167,14 @@ export interface ArchivoMeta {
 }
 
 // ============================================================
-// control-tiempos — GET /procesos/{id}/tiempos response types
-// Mirrors backend TiemposProcesoOut schema exactly.
+// Timing analysis — GET /procesos/{id}/tiempos
 // ============================================================
-
 export interface Intervalo {
   cod: string;
   nombre: string;
   area_responsable: string;
-  desde: string;  // YYYY-MM-DD
-  hasta: string;  // YYYY-MM-DD
+  desde: string;
+  hasta: string;
   dias: number;
 }
 
@@ -193,31 +191,29 @@ export interface TiemposProceso {
 }
 
 // ============================================================
-// matriz-tiempos — GET /tiempos/matriz response types
-// Mirrors backend MatrizTiemposOut schema exactly.
+// Timing matrix — GET /tiempos/matriz
 // ============================================================
-
 export interface ColumnaMatriz {
-  key: string;    // e.g. "cmn"
-  label: string;  // e.g. "CMN"
-  cod: string | null;  // e.g. "E01c"; null for TOTAL
+  key: string;
+  label: string;
+  cod: string | null;
 }
 
 export interface FilaMatriz {
   proceso_id: number;
   id_proceso: string;
   requerimiento: string;
-  pim: number | null;   // proceso.pim as float; null when not set
-  estado: string;       // e.g. "EN PROCESO"
-  tipo: string | null;  // e.g. "SERVICIO"; null when not set
-  celdas: (number | null)[];  // aligned to columnas order (hito cols only); null = no data
+  pim: number | null;
+  estado: string;
+  tipo: string | null;
+  celdas: (number | null)[];
   total_dias: number;
 }
 
 export interface MatrizTiempos {
-  columnas: ColumnaMatriz[];            // 7 hito columns + TOTAL (8 total)
+  columnas: ColumnaMatriz[];
   filas: FilaMatriz[];
-  promedios: (number | null)[];         // aligned to columnas (including TOTAL at end)
+  promedios: (number | null)[];
   promedio_total: number | null;
 }
 

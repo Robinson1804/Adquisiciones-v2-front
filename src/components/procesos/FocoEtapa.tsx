@@ -8,9 +8,11 @@
 //   o botón "Abrir editor completo" (por_area / bucle).
 // ============================================================
 import React, { useState } from "react";
+import Link from "next/link";
 import { COLORES_ESTADO, COLORES_ACTOR, ETAPAS_CONFIG } from "@/lib/constants";
 import { FASES, faseDeEtapa, resumenFase, nombreCorto } from "@/lib/fases";
 import { useRegistrarEtapa, useActualizarEtapa } from "@/hooks/useEtapas";
+import { useCorreosIngestaEtapa } from "@/hooks/useIngesta";
 import { getFechaInicioSugerida } from "@/lib/etapaRules";
 import { ModalRegistroEtapa } from "./ModalRegistroEtapa";
 import type { EtapaAgrupada, Progreso } from "@/types/etapa";
@@ -27,8 +29,6 @@ export interface FocoEtapaProps {
   onClose: () => void;
   areasUsuarias?: string[];
   procesoEstado?: string;
-  /** REFINAMIENTO FASE 3: código de la etapa más avanzada con datos reales (por correo). */
-  etapaActualAvance?: string | null;
 }
 
 // ============================================================
@@ -61,7 +61,6 @@ function DiagonalIcon() {
 
 // ============================================================
 // NavDot — estado visual del dot circular en la nav
-// estadoVisual may differ from raw estado in inference-driven processes
 // ============================================================
 function NavDot({ estado }: { estado: string }) {
   const col = COLORES_ESTADO[estado as keyof typeof COLORES_ESTADO] ?? COLORES_ESTADO.PENDIENTE;
@@ -119,11 +118,10 @@ interface NavRowProps {
   etapa: EtapaAgrupada;
   isActive: boolean;
   isCurrent: boolean;
-  estadoVisual: string;
   onClick: () => void;
 }
 
-function NavRow({ etapa, isActive, isCurrent, estadoVisual, onClick }: NavRowProps) {
+function NavRow({ etapa, isActive, isCurrent, onClick }: NavRowProps) {
   return (
     <button
       type="button"
@@ -137,7 +135,7 @@ function NavRow({ etapa, isActive, isCurrent, estadoVisual, onClick }: NavRowPro
         }`}
       style={isActive ? { boxShadow: "inset 0 0 0 1.5px #bcd4fa, 0 1px 3px rgba(15,28,48,.08)" } : undefined}
     >
-      <NavDot estado={estadoVisual} />
+      <NavDot estado={etapa.estado} />
       <span className="font-mono text-[10.5px] font-bold text-[#64748b] flex-shrink-0 w-[30px]">
         {etapa.cod}
       </span>
@@ -164,12 +162,10 @@ interface NavFaseProps {
   etapas: EtapaAgrupada[];
   etapaActual: string | null;
   etapaSeleccionada: EtapaAgrupada | null;
-  etapaActualAvance: string | null;
   onSelect: (e: EtapaAgrupada) => void;
 }
 
-function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, etapaActualAvance, onSelect }: NavFaseProps) {
-  const inferenceDriven = !!etapaActualAvance;
+function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, onSelect }: NavFaseProps) {
   const completadas = etapas.filter((e) => e.estado === "COMPLETADO").length;
   const total = etapas.filter((e) => !e.es_bucle).length;
   const est = etapas.some((e) => e.estado === "EN_CURSO")
@@ -177,11 +173,6 @@ function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, etapaAct
     : etapas.every((e) => e.es_bucle || e.estado === "COMPLETADO" || e.estado === "NO_APLICA")
     ? COLORES_ESTADO.COMPLETADO
     : COLORES_ESTADO.PENDIENTE;
-
-  function getEstadoVisual(etapa: EtapaAgrupada): string {
-    if (!inferenceDriven) return etapa.estado;
-    return etapa.estado === "COMPLETADO" ? "COMPLETADO" : "OMITIDO";
-  }
 
   return (
     <div className="mb-[6px]">
@@ -204,8 +195,7 @@ function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, etapaAct
           key={e.cod}
           etapa={e}
           isActive={etapaSeleccionada?.cod === e.cod}
-          isCurrent={inferenceDriven ? e.cod === etapaActualAvance : e.cod === etapaActual}
-          estadoVisual={getEstadoVisual(e)}
+          isCurrent={e.cod === etapaActual}
           onClick={() => onSelect(e)}
         />
       ))}
@@ -218,12 +208,10 @@ function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, etapaAct
 // ============================================================
 interface PanelHeroProps {
   etapa: EtapaAgrupada;
-  estadoVisual?: string;
 }
 
-function PanelHero({ etapa, estadoVisual }: PanelHeroProps) {
-  const estadoKey = estadoVisual ?? etapa.estado;
-  const est = COLORES_ESTADO[estadoKey as keyof typeof COLORES_ESTADO] ?? COLORES_ESTADO.PENDIENTE;
+function PanelHero({ etapa }: PanelHeroProps) {
+  const est = COLORES_ESTADO[etapa.estado as keyof typeof COLORES_ESTADO] ?? COLORES_ESTADO.PENDIENTE;
   const actor = COLORES_ACTOR[etapa.area_responsable as keyof typeof COLORES_ACTOR] ?? COLORES_ACTOR.OTIN;
   const config = ETAPAS_CONFIG.find((c) => c.cod === etapa.cod);
 
@@ -471,6 +459,80 @@ function InlineForm({ etapa, procesoId }: InlineFormProps) {
 }
 
 // ============================================================
+// CorreosVinculados — trazabilidad hacia la bandeja de ingesta
+// ============================================================
+function formatCorreoDate(value: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("es-PE");
+}
+
+function CorreosVinculados({
+  procesoId,
+  etapa,
+}: {
+  procesoId: number;
+  etapa: EtapaAgrupada;
+}) {
+  const { data, isLoading, isError } = useCorreosIngestaEtapa(procesoId, etapa.cod);
+  const correos = data?.items ?? [];
+
+  if (isLoading) {
+    return (
+      <section className="mt-[14px] border border-[#eef1f7] rounded-[13px] bg-white p-[14px_16px] text-[12px] text-[#64748b]">
+        Cargando correos vinculados...
+      </section>
+    );
+  }
+
+  if (isError || correos.length === 0) return null;
+
+  return (
+    <section
+      className="mt-[14px] border border-[#bdebd3] rounded-[13px] bg-[#f0fdf5] p-[14px_16px]"
+      aria-label="Correos vinculados a la etapa"
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h4 className="text-[13px] font-bold text-[#065f46]">
+            Correos vinculados
+            <span className="ml-2 rounded-full bg-white border border-[#bbf7d0] px-2 py-0.5 text-[11px] font-mono">
+              {correos.length}
+            </span>
+          </h4>
+          <p className="mt-1 text-[12px] text-[#047857]">
+            Evidencia de ingesta asociada a esta etapa.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {correos.map((correo) => (
+          <div
+            key={correo.id}
+            className="flex items-center justify-between gap-3 rounded-[9px] border border-[#d1fae5] bg-white px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-semibold text-[#03224d] truncate">
+                {correo.subject ?? "(sin asunto)"}
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-[#64748b]">
+                {formatCorreoDate(correo.received_at)} · {correo.documentos.length} doc(s)
+              </p>
+            </div>
+            <Link
+              href={`/ingesta?tab=aprobados&correo=${correo.id}`}
+              className="flex-shrink-0 rounded-[8px] border border-[#bbf7d0] bg-[#ecfdf5] px-3 py-1.5 text-[12px] font-semibold text-[#047857] hover:bg-[#d1fae5]"
+            >
+              Ver en ingesta
+            </Link>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
 // Breadcrumb
 // ============================================================
 function Breadcrumb({ etapa, etapas }: { etapa: EtapaAgrupada; etapas: EtapaAgrupada[] }) {
@@ -508,14 +570,7 @@ export function FocoEtapa({
   onClose,
   areasUsuarias = [],
   procesoEstado,
-  etapaActualAvance,
 }: FocoEtapaProps) {
-  const inferenceDriven = !!etapaActualAvance;
-
-  function getEstadoVisual(etapa: EtapaAgrupada): string {
-    if (!inferenceDriven) return etapa.estado;
-    return etapa.estado === "COMPLETADO" ? "COMPLETADO" : "OMITIDO";
-  }
   const [modalOpen, setModalOpen] = useState(false);
 
   // Cuando cambia la etapa seleccionada, cerrar modal si estaba abierto
@@ -552,7 +607,6 @@ export function FocoEtapa({
               etapas={etapasDeFase}
               etapaActual={progreso.etapa_actual}
               etapaSeleccionada={etapaSeleccionada}
-              etapaActualAvance={etapaActualAvance ?? null}
               onSelect={onSelectEtapa}
             />
           );
@@ -577,7 +631,7 @@ export function FocoEtapa({
             <Breadcrumb etapa={etapaSeleccionada} etapas={etapas} />
 
             {/* Hero card */}
-            <PanelHero etapa={etapaSeleccionada} estadoVisual={getEstadoVisual(etapaSeleccionada)} />
+            <PanelHero etapa={etapaSeleccionada} />
 
             {/* Form o botón delegado */}
             {delegaAlModal ? (
@@ -598,8 +652,10 @@ export function FocoEtapa({
                 </button>
               </div>
             ) : (
-              <InlineForm key={etapaSeleccionada.cod} etapa={etapaSeleccionada} procesoId={procesoId} />
+              <InlineForm etapa={etapaSeleccionada} procesoId={procesoId} />
             )}
+
+            <CorreosVinculados procesoId={procesoId} etapa={etapaSeleccionada} />
 
             {/* Botón cerrar / volver al mapa */}
             <div className="mt-[12px]">

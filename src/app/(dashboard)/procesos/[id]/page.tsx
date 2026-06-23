@@ -12,10 +12,8 @@ import Link from "next/link";
 import { useAuthStore } from "@/stores/authStore";
 import { useProceso, useActualizarProceso, useEliminarProceso } from "@/hooks/useProcesos";
 import { useMontosProceso } from "@/hooks/useMontosProceso";
-import { useTiempos } from "@/hooks/useTiempos";
 import { useExportProcesoPdf } from "@/hooks/useExport";
 import { LineaTiempo } from "@/components/procesos/LineaTiempo";
-import { TablaTiempos } from "@/components/procesos/TablaTiempos";
 import { COLORES_ESTADO, COLORES_ACTOR, DEPENDENCIAS } from "@/lib/constants";
 import { formatFechaLarga } from "@/lib/fecha";
 import type { EstadoProceso, ProcesoUpdatePayload, TipoProceso } from "@/types";
@@ -101,11 +99,6 @@ export default function DetalleProceso() {
     Number.isFinite(procesoId) && procesoId > 0 ? procesoId : null
   );
 
-  // control-tiempos — interval chain for the "Tiempos" tab
-  const tiempos = useTiempos(
-    Number.isFinite(procesoId) && procesoId > 0 ? procesoId : null
-  );
-
   const { mutate: actualizarProceso, isPending: isUpdating } =
     useActualizarProceso();
 
@@ -166,8 +159,8 @@ export default function DetalleProceso() {
     clasificador_cmn: "",
   };
 
-  // Tab state — "ficha" (default) | "documentos" | "tiempos"
-  const [activeTab, setActiveTab] = useState<"ficha" | "documentos" | "tiempos">("ficha");
+  // Tab state — "ficha" (default) | "documentos"
+  const [activeTab, setActiveTab] = useState<"ficha" | "documentos">("ficha");
 
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState<FichaDraft>(emptyDraft);
@@ -700,20 +693,6 @@ export default function DetalleProceso() {
         >
           Documentos
         </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "tiempos"}
-          aria-controls="panel-tiempos"
-          onClick={() => setActiveTab("tiempos")}
-          className={[
-            "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-            activeTab === "tiempos"
-              ? "border-primary text-primary"
-              : "border-transparent text-gray-500 hover:text-gray-700",
-          ].join(" ")}
-        >
-          Tiempos
-        </button>
       </div>
 
       {/* Panel: Proceso + Timeline */}
@@ -740,23 +719,6 @@ export default function DetalleProceso() {
             Documentos vinculados
           </h2>
           <DocumentosTab procesoId={proceso.id} />
-        </div>
-      )}
-
-      {/* Panel: Tiempos */}
-      {activeTab === "tiempos" && (
-        <div
-          id="panel-tiempos"
-          role="tabpanel"
-          className="bg-white border border-gray-200 shadow-sm rounded-lg p-5"
-        >
-          <h2 className="text-sm font-bold text-primary mb-4">
-            Tiempos por etapa — Cadena de hitos
-          </h2>
-          <TablaTiempos
-            data={tiempos.data}
-            isLoading={tiempos.isLoading}
-          />
         </div>
       )}
 

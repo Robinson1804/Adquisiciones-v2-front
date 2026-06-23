@@ -1,60 +1,123 @@
 "use client";
 
-/**
- * IngestaBandeja — container que lista correos de ingesta en dos secciones:
- *  1. Pendientes: correos PENDIENTE de revisión humana.
- *  2. Auto-vinculados: correos APROBADO_AUTO para auditoría/desvinculación.
- *
- * WARNING-1 FIX: expone los APROBADO_AUTO para que supervisores puedan
- * ejercer el Desvincular y la reversibilidad prometida en ADR-5.
- */
-
-import React from "react";
-import { useIngesta, useIngestaAprobadosAuto } from "@/hooks/useIngesta";
+import React, { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  useIngesta,
+  useIngestaAprobados,
+  useIngestaAprobadosAuto,
+  useIngestaRechazados,
+} from "@/hooks/useIngesta";
+import type { CorreoIngesta } from "@/types/ingesta";
 import { CorreoCard } from "./CorreoCard";
 
-// ----------------------------------------------------------------
-// Sección reutilizable
-// ----------------------------------------------------------------
+type TabKey = "aprobados" | "pendientes" | "rechazados";
 
-interface SeccionProps {
-  titulo: string;
-  descripcion?: string;
-  items: React.ReactNode[];
-  "data-testid"?: string;
+function parseTab(value: string | null): TabKey | null {
+  return value === "pendientes" || value === "rechazados" || value === "aprobados"
+    ? value
+    : null;
 }
 
-function Seccion({ titulo, descripcion, items, "data-testid": testId }: SeccionProps) {
+function sortByDate(items: CorreoIngesta[]): CorreoIngesta[] {
+  return [...items].sort((a, b) => {
+    const da = new Date(a.received_at ?? a.revisado_en ?? a.creado_en).getTime();
+    const db = new Date(b.received_at ?? b.revisado_en ?? b.creado_en).getTime();
+    return db - da;
+  });
+}
+
+function EmptyState({ label }: { label: string }) {
   return (
-    <section data-testid={testId} className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-          {titulo}
-        </h2>
-        <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 font-mono">
-          {items.length}
-        </span>
-      </div>
-      {descripcion && (
-        <p className="text-xs text-gray-400">{descripcion}</p>
-      )}
-      <div className="space-y-3">
-        {items}
-      </div>
-    </section>
+    <div className="bg-white border border-gray-200 rounded-lg p-10 text-center">
+      <p className="text-gray-500 text-sm">{label}</p>
+      <p className="text-gray-400 text-xs mt-1">
+        Sincronizá Exchange desde el panel superior para cargar candidatos.
+      </p>
+    </div>
   );
 }
 
-// ----------------------------------------------------------------
-// IngestaBandeja
-// ----------------------------------------------------------------
-
 export function IngestaBandeja() {
-  const { data: dataPendientes, isLoading: loadingPendientes, isError: errorPendientes } = useIngesta();
-  const { data: dataAutoVinculados, isLoading: loadingAuto, isError: errorAuto } = useIngestaAprobadosAuto();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const correoParam = searchParams.get("correo");
+  const selectedCorreoId = correoParam ? Number(correoParam) : null;
+  const urlTab = parseTab(tabParam);
+  const [activeTab, setActiveTab] = useState<TabKey>(urlTab ?? "aprobados");
+  const pendientesQuery = useIngesta();
+  const aprobadosQuery = useIngestaAprobados();
+  const aprobadosAutoQuery = useIngestaAprobadosAuto();
+  const rechazadosQuery = useIngestaRechazados();
 
-  const isLoading = loadingPendientes || loadingAuto;
-  const isError = errorPendientes || errorAuto;
+  const isLoading =
+    pendientesQuery.isLoading ||
+    aprobadosQuery.isLoading ||
+    aprobadosAutoQuery.isLoading ||
+    rechazadosQuery.isLoading;
+  const isError =
+    pendientesQuery.isError ||
+    aprobadosQuery.isError ||
+    aprobadosAutoQuery.isError ||
+    rechazadosQuery.isError;
+
+  const pendientes = useMemo(
+    () => sortByDate(pendientesQuery.data?.items ?? []),
+    [pendientesQuery.data?.items]
+  );
+  const aprobados = useMemo(
+    () =>
+      sortByDate([
+        ...(aprobadosQuery.data?.items ?? []),
+        ...(aprobadosAutoQuery.data?.items ?? []),
+      ]),
+    [aprobadosQuery.data?.items, aprobadosAutoQuery.data?.items]
+  );
+  const rechazados = useMemo(
+    () => sortByDate(rechazadosQuery.data?.items ?? []),
+    [rechazadosQuery.data?.items]
+  );
+
+  const tabs: Array<{
+    key: TabKey;
+    label: string;
+    description: string;
+    items: CorreoIngesta[];
+  }> = [
+    {
+      key: "aprobados",
+      label: "Aprobados",
+      description: "Correos vinculados a procesos. Se muestran primero para seguimiento.",
+      items: aprobados,
+    },
+    {
+      key: "pendientes",
+      label: "Por revisar",
+      description: "Correos que requieren aprobación o rechazo manual.",
+      items: pendientes,
+    },
+    {
+      key: "rechazados",
+      label: "Rechazados",
+      description: "Correos retirados de la bandeja. Podés restaurarlos si fue un error.",
+      items: rechazados,
+    },
+  ];
+
+  const current = tabs.find((tab) => tab.key === activeTab) ?? tabs[0]!;
+  const totalGeneral = pendientes.length + aprobados.length + rechazados.length;
+
+  React.useEffect(() => {
+    if (urlTab) setActiveTab(urlTab);
+  }, [urlTab]);
+
+  React.useEffect(() => {
+    if (!selectedCorreoId || isLoading) return;
+    const target = document.getElementById(`correo-${selectedCorreoId}`);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [selectedCorreoId, isLoading, activeTab, current.items.length]);
 
   if (isLoading) {
     return (
@@ -81,60 +144,71 @@ export function IngestaBandeja() {
     );
   }
 
-  const pendientes = dataPendientes?.items ?? [];
-  const autoVinculados = dataAutoVinculados?.items ?? [];
-  const totalGeneral = pendientes.length + autoVinculados.length;
-
   if (totalGeneral === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg p-10 text-center">
-        <p className="text-gray-500 text-sm">
-          No hay correos pendientes de revisión.
-        </p>
-        <p className="text-gray-400 text-xs mt-1">
-          Los correos procesados por el orquestador aparecerán aquí.
-        </p>
-      </div>
-    );
+    return <EmptyState label="No hay correos de ingesta registrados." />;
   }
 
   return (
-    <div className="space-y-6" aria-label="Bandeja de ingesta de correos">
-      {/* Sección 1: Pendientes de revisión manual */}
-      {pendientes.length > 0 && (
-        <Seccion
-          titulo="Pendientes de revisión"
-          descripcion="Correos que requieren aprobación o rechazo manual."
-          data-testid="seccion-pendientes"
-          items={pendientes.map((correo) => (
-            <CorreoCard key={correo.id} correo={correo} />
-          ))}
-        />
-      )}
-
-      {/* Sección vacía de pendientes cuando hay auto-vinculados pero no pendientes */}
-      {pendientes.length === 0 && autoVinculados.length > 0 && (
-        <div
-          data-testid="seccion-pendientes"
-          className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-6 text-center"
-        >
-          <p className="text-gray-400 text-xs">
-            Sin correos pendientes de revisión manual.
-          </p>
+    <div className="space-y-4" aria-label="Bandeja de ingesta de correos">
+      <div className="bg-white border border-gray-200 rounded-lg p-2">
+        <div className="grid grid-cols-3 gap-1">
+          {tabs.map((tab) => {
+            const selected = tab.key === activeTab;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`h-10 rounded text-sm font-semibold transition-colors ${
+                  selected
+                    ? "bg-primary text-white"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                    selected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {tab.items.length}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
 
-      {/* Sección 2: Auto-vinculados (APROBADO_AUTO) */}
-      {autoVinculados.length > 0 && (
-        <Seccion
-          titulo="Auto-vinculados"
-          descripcion="Correos vinculados automáticamente. Podés desvincularlos si el match fue incorrecto."
-          data-testid="seccion-aprobados-auto"
-          items={autoVinculados.map((correo) => (
-            <CorreoCard key={correo.id} correo={correo} />
-          ))}
-        />
-      )}
+      <section className="space-y-3" data-testid={`seccion-${current.key}`}>
+        <div>
+          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+            {current.label}
+          </h2>
+          <p className="text-xs text-gray-400 mt-1">{current.description}</p>
+        </div>
+
+        {current.items.length === 0 ? (
+          <EmptyState
+            label={
+              current.key === "aprobados"
+                ? "No hay correos aprobados todavía."
+                : current.key === "pendientes"
+                  ? "No hay correos pendientes de revisión."
+                  : "No hay correos rechazados."
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            {current.items.map((correo) => (
+              <CorreoCard
+                key={correo.id}
+                correo={correo}
+                highlighted={correo.id === selectedCorreoId}
+              />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

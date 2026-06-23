@@ -192,7 +192,6 @@ export function LineaTiempo({ procesoId, areasUsuarias = [], procesoEstado, etap
           onClose={handleCloseFoco}
           areasUsuarias={areasUsuarias}
           procesoEstado={procesoEstado}
-          etapaActualAvance={etapaActualAvance ?? null}
         />
       )}
 

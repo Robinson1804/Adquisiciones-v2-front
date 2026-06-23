@@ -87,8 +87,6 @@ interface EtapaCardProps {
   onRegistrar: () => void;
   /** Cambio 2: called when user clicks an "activate bucle" button; receives the bucle cod */
   onActivarBucle?: (bucleCod: string) => void;
-  /** REFINAMIENTO FASE 3: when set, non-COMPLETADO stages render with the OMITIDO (gray) palette. */
-  etapaActualAvance?: string | null;
 }
 
 export function EtapaCard({
@@ -99,12 +97,7 @@ export function EtapaCard({
   actionability,
   onRegistrar,
   onActivarBucle,
-  etapaActualAvance,
 }: EtapaCardProps) {
-  // Inference-driven: non-COMPLETADO stages render with the OMITIDO (gray) palette.
-  const estadoVisual = etapaActualAvance
-    ? (etapa.estado === "COMPLETADO" ? "COMPLETADO" : "OMITIDO")
-    : etapa.estado;
   const { user } = useAuthStore();
   const puedeEscribir = user?.rol === 'ADMIN' || user?.rol === 'EDITOR';
 
@@ -166,8 +159,8 @@ export function EtapaCard({
     }
   }
 
-  // Estado colors — follows estadoVisual (may be OMITIDO in inference-driven processes)
-  const estadoKey = estadoVisual as keyof typeof COLORES_ESTADO;
+  // Estado colors
+  const estadoKey = etapa.estado as keyof typeof COLORES_ESTADO;
   const estadoColor = COLORES_ESTADO[estadoKey] ?? COLORES_ESTADO.PENDIENTE;
 
   // Date info from first fila
@@ -248,7 +241,7 @@ export function EtapaCard({
 
             {/* Row 2: state pill + ronda badge + E16 alerta */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              <EstadoPill estado={estadoVisual} />
+              <EstadoPill estado={etapa.estado} />
               {isBucle && latestRonda !== null && (
                 <span
                   className="text-xs px-2 py-0.5 rounded-full font-medium border"

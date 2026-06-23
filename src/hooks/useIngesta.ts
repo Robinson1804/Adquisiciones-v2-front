@@ -18,12 +18,19 @@ import {
 } from "@tanstack/react-query";
 import {
   getIngestaPendientes,
+  getIngestaAprobados,
   getIngestaAprobadosAuto,
   patchIngesta,
   aprobarIngesta,
   rechazarIngesta,
+  restaurarIngesta,
   desvincularIngesta,
   getDocumentosProceso,
+  getCorreosIngestaEtapa,
+  descargarDocumentoIngesta,
+  listarCarpetasExchange,
+  probarExchange,
+  sincronizarExchange,
 } from "@/lib/api";
 import type {
   CorreoIngesta,
@@ -32,6 +39,11 @@ import type {
   AprobarPayload,
   RechazarPayload,
   DocumentoIngesta,
+  ExchangeCredencialesPayload,
+  ExchangeFoldersResponse,
+  ExchangeSyncPayload,
+  ExchangeTestResponse,
+  ExchangeSyncResponse,
 } from "@/types/ingesta";
 
 // ----------------------------------------------------------------
@@ -40,9 +52,13 @@ import type {
 export const ingestaKeys = {
   all: ["ingesta"] as const,
   pendientes: () => ["ingesta", "pendientes"] as const,
+  aprobados: () => ["ingesta", "aprobados"] as const,
   aprobadosAuto: () => ["ingesta", "aprobados-auto"] as const,
+  rechazados: () => ["ingesta", "rechazados"] as const,
   documentosProceso: (procesoId: number) =>
     ["ingesta", "documentos", procesoId] as const,
+  correosEtapa: (procesoId: number, codigoEtapa: string) =>
+    ["ingesta", "correos-etapa", procesoId, codigoEtapa] as const,
 };
 
 // ----------------------------------------------------------------
@@ -64,6 +80,33 @@ export function useIngestaAprobadosAuto() {
   return useQuery<IngestaPendientesResponse, Error>({
     queryKey: ingestaKeys.aprobadosAuto(),
     queryFn: getIngestaAprobadosAuto,
+  });
+}
+
+// ----------------------------------------------------------------
+// useIngestaAprobados — lista correos APROBADO
+// ----------------------------------------------------------------
+export function useIngestaAprobados() {
+  return useQuery<IngestaPendientesResponse, Error>({
+    queryKey: ingestaKeys.aprobados(),
+    queryFn: getIngestaAprobados,
+  });
+}
+
+// ----------------------------------------------------------------
+// useIngestaRechazados — lista correos rechazados restaurables
+// ----------------------------------------------------------------
+export function useIngestaRechazados() {
+  return useQuery<IngestaPendientesResponse, Error>({
+    queryKey: ingestaKeys.rechazados(),
+    queryFn: async () => {
+      const { api } = await import("@/lib/api");
+      const res = await api.get<IngestaPendientesResponse>(
+        "/ingesta/pendientes",
+        { params: { estado: "RECHAZADO" } }
+      );
+      return res.data;
+    },
   });
 }
 
@@ -95,7 +138,7 @@ export function useAprobarIngesta() {
     Error,
     { id: number } & AprobarPayload
   >({
-    mutationFn: ({ id, proceso_id }) => aprobarIngesta(id, { proceso_id }),
+    mutationFn: ({ id, ...payload }) => aprobarIngesta(id, payload),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ingestaKeys.all });
     },
@@ -113,6 +156,19 @@ export function useRechazarIngesta() {
     { id: number } & RechazarPayload
   >({
     mutationFn: ({ id, motivo }) => rechazarIngesta(id, { motivo }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ingestaKeys.all });
+    },
+  });
+}
+
+// ----------------------------------------------------------------
+// useRestaurarIngesta — POST /ingesta/{id}/restaurar
+// ----------------------------------------------------------------
+export function useRestaurarIngesta() {
+  const qc = useQueryClient();
+  return useMutation<CorreoIngesta, Error, number>({
+    mutationFn: (id) => restaurarIngesta(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ingestaKeys.all });
     },
@@ -142,5 +198,56 @@ export function useDocumentosProceso(procesoId: number) {
     queryKey: ingestaKeys.documentosProceso(procesoId),
     queryFn: () => getDocumentosProceso(procesoId),
     enabled: procesoId > 0,
+  });
+}
+
+// ----------------------------------------------------------------
+// useCorreosIngestaEtapa — correos aprobados vinculados a una etapa
+// ----------------------------------------------------------------
+export function useCorreosIngestaEtapa(procesoId: number, codigoEtapa: string) {
+  return useQuery<IngestaPendientesResponse, Error>({
+    queryKey: ingestaKeys.correosEtapa(procesoId, codigoEtapa),
+    queryFn: () => getCorreosIngestaEtapa(procesoId, codigoEtapa),
+    enabled: procesoId > 0 && codigoEtapa.length > 0,
+  });
+}
+
+// ----------------------------------------------------------------
+// useDescargarDocumentoIngesta — descarga blob con Bearer token
+// ----------------------------------------------------------------
+export function useDescargarDocumentoIngesta() {
+  return useMutation<Blob, Error, number>({
+    mutationFn: (docId) => descargarDocumentoIngesta(docId),
+  });
+}
+
+// ----------------------------------------------------------------
+// useProbarExchange — POST /ingesta/exchange/probar
+// ----------------------------------------------------------------
+export function useProbarExchange() {
+  return useMutation<ExchangeTestResponse, Error, ExchangeCredencialesPayload>({
+    mutationFn: probarExchange,
+  });
+}
+
+// ----------------------------------------------------------------
+// useListarCarpetasExchange — POST /ingesta/exchange/carpetas
+// ----------------------------------------------------------------
+export function useListarCarpetasExchange() {
+  return useMutation<ExchangeFoldersResponse, Error, ExchangeCredencialesPayload>({
+    mutationFn: listarCarpetasExchange,
+  });
+}
+
+// ----------------------------------------------------------------
+// useSincronizarExchange — POST /ingesta/exchange/sync
+// ----------------------------------------------------------------
+export function useSincronizarExchange() {
+  const qc = useQueryClient();
+  return useMutation<ExchangeSyncResponse, Error, ExchangeSyncPayload>({
+    mutationFn: sincronizarExchange,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ingestaKeys.all });
+    },
   });
 }

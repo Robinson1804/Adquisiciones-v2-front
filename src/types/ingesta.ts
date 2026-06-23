@@ -61,6 +61,13 @@ export interface CorreoIngesta {
   motivo_rechazo: string | null;
   revisado_por: string | null;
   revisado_en: string | null; // ISO datetime string
+  // Sugerencia de clasificación/revisión
+  relevancia_score: number | null;
+  relevancia_motivos: string | null;
+  proceso_sugerido_id: number | null;
+  etapa_sugerida: string | null;
+  fase_sugerida: string | null;
+  resumen_sugerido: string | null;
   creado_en: string; // ISO datetime string
   documentos: DocumentoIngesta[];
 }
@@ -86,8 +93,60 @@ export interface CorreoCorreccionPayload {
 
 export interface AprobarPayload {
   proceso_id: number;
+  etapa_sugerida?: string | null;
+  estado_etapa?: "PENDIENTE" | "EN_CURSO" | "COMPLETADO";
+  fecha_documento?: string | null;
+  fecha_fin?: string | null;
+  responsable?: string | null;
+  oficio_correo?: string | null;
+  observaciones?: string | null;
 }
 
 export interface RechazarPayload {
   motivo?: string | null;
+}
+
+export interface ExchangeCredencialesPayload {
+  servidor: string;
+  email: string;
+  usuario: string;
+  password: string;
+  carpeta: string;
+}
+
+export interface ExchangeSyncPayload extends ExchangeCredencialesPayload {
+  limite: number;
+  solo_no_leidos: boolean;
+  remitente?: string | null;
+  umbral_relevancia: number;
+  descargar_adjuntos: boolean;
+}
+
+export interface ExchangeTestResponse {
+  conectado: boolean;
+  cuenta: string | null;
+  total_bandeja: number | null;
+  mensaje: string;
+}
+
+export interface ExchangeFolder {
+  nombre: string;
+  total: number | null;
+  no_leidos: number | null;
+}
+
+export interface ExchangeFoldersResponse {
+  items: ExchangeFolder[];
+  total: number;
+}
+
+export interface ExchangeSyncResponse {
+  carpeta: string;
+  revisados: number;
+  candidatos: number;
+  creados: number;
+  duplicados: number;
+  auto_vinculados: number;
+  descartados: number;
+  errores: string[];
 }

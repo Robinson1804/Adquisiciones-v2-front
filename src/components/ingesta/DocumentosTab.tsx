@@ -14,8 +14,10 @@
  */
 
 import React from "react";
-import { useDocumentosProceso } from "@/hooks/useIngesta";
-import { getDocumentoUrlDescarga } from "@/lib/api";
+import {
+  useDescargarDocumentoIngesta,
+  useDocumentosProceso,
+} from "@/hooks/useIngesta";
 import type { DocumentoIngesta } from "@/types/ingesta";
 
 // ----------------------------------------------------------------
@@ -42,7 +44,23 @@ function formatFecha(iso: string): string {
 // ----------------------------------------------------------------
 
 function DocumentoRow({ doc }: { doc: DocumentoIngesta }) {
-  const url = getDocumentoUrlDescarga(doc.id);
+  const descargar = useDescargarDocumentoIngesta();
+
+  function handleDownload() {
+    descargar.mutate(doc.id, {
+      onSuccess: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = doc.nombre_original;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      },
+    });
+  }
+
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
       <td className="py-2 px-3 text-xs">
@@ -63,15 +81,15 @@ function DocumentoRow({ doc }: { doc: DocumentoIngesta }) {
         {formatBytes(doc.tamano_bytes)}
       </td>
       <td className="py-2 px-3 text-xs">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary font-medium hover:underline"
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={descargar.isPending}
+          className="text-primary font-medium hover:underline disabled:opacity-50"
           aria-label={`Descargar ${doc.nombre_original}`}
         >
-          Descargar
-        </a>
+          {descargar.isPending ? "Descargando..." : "Descargar"}
+        </button>
       </td>
     </tr>
   );

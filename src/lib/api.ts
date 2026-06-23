@@ -158,8 +158,7 @@ export async function getMontosProceso(
 }
 
 // ============================================================
-// control-tiempos — GET /procesos/{id}/tiempos
-// Returns interval chain and bottleneck for the given proceso.
+// Timing analysis API functions
 // ============================================================
 
 export async function getTiempos(procesoId: number): Promise<TiemposProceso> {
@@ -167,15 +166,12 @@ export async function getTiempos(procesoId: number): Promise<TiemposProceso> {
   return res.data;
 }
 
-// ============================================================
-// matriz-tiempos — GET /tiempos/matriz
-// Returns the cross-process timing heatmap for all filtered procesos.
-// Mirror getProcesos params style: omit keys with undefined values.
-// ============================================================
-
-export async function getMatrizTiempos(
-  filtros: { anno?: number; estado?: string; tipo?: string; q?: string }
-): Promise<MatrizTiempos> {
+export async function getMatrizTiempos(filtros: {
+  anno?: number;
+  estado?: string;
+  tipo?: string;
+  q?: string;
+}): Promise<MatrizTiempos> {
   const res = await api.get<MatrizTiempos>("/tiempos/matriz", {
     params: filtros,
   });
@@ -314,10 +310,45 @@ import type {
   AprobarPayload,
   RechazarPayload,
   DocumentoIngesta,
+  ExchangeCredencialesPayload,
+  ExchangeSyncPayload,
+  ExchangeTestResponse,
+  ExchangeFoldersResponse,
+  ExchangeSyncResponse,
 } from "@/types/ingesta";
 
 export async function getIngestaPendientes(): Promise<IngestaPendientesResponse> {
   const res = await api.get<IngestaPendientesResponse>("/ingesta/pendientes");
+  return res.data;
+}
+
+export async function probarExchange(
+  payload: ExchangeCredencialesPayload
+): Promise<ExchangeTestResponse> {
+  const res = await api.post<ExchangeTestResponse>(
+    "/ingesta/exchange/probar",
+    payload
+  );
+  return res.data;
+}
+
+export async function listarCarpetasExchange(
+  payload: ExchangeCredencialesPayload
+): Promise<ExchangeFoldersResponse> {
+  const res = await api.post<ExchangeFoldersResponse>(
+    "/ingesta/exchange/carpetas",
+    payload
+  );
+  return res.data;
+}
+
+export async function sincronizarExchange(
+  payload: ExchangeSyncPayload
+): Promise<ExchangeSyncResponse> {
+  const res = await api.post<ExchangeSyncResponse>(
+    "/ingesta/exchange/sync",
+    payload
+  );
   return res.data;
 }
 
@@ -354,6 +385,20 @@ export async function rechazarIngesta(
   return res.data;
 }
 
+/** Retorna correos aprobados manualmente. */
+export async function getIngestaAprobados(): Promise<IngestaPendientesResponse> {
+  const res = await api.get<IngestaPendientesResponse>(
+    "/ingesta/pendientes",
+    { params: { estado: "APROBADO" } }
+  );
+  return res.data;
+}
+
+export async function restaurarIngesta(id: number): Promise<CorreoIngesta> {
+  const res = await api.post<CorreoIngesta>(`/ingesta/${id}/restaurar`);
+  return res.data;
+}
+
 export async function desvincularIngesta(id: number): Promise<CorreoIngesta> {
   const res = await api.post<CorreoIngesta>(`/ingesta/${id}/desvincular`);
   return res.data;
@@ -365,6 +410,23 @@ export async function getDocumentosProceso(
   const res = await api.get<DocumentoIngesta[]>(
     `/procesos/${procesoId}/documentos`
   );
+  return res.data;
+}
+
+export async function getCorreosIngestaEtapa(
+  procesoId: number,
+  codigoEtapa: string
+): Promise<IngestaPendientesResponse> {
+  const res = await api.get<IngestaPendientesResponse>(
+    `/procesos/${procesoId}/etapas/${codigoEtapa}/correos`
+  );
+  return res.data;
+}
+
+export async function descargarDocumentoIngesta(docId: number): Promise<Blob> {
+  const res = await api.get<Blob>(`/ingesta/documentos/${docId}`, {
+    responseType: "blob",
+  });
   return res.data;
 }
 

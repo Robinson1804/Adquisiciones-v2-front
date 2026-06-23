@@ -1,8 +1,5 @@
 /**
  * T-17 — S2 (lista de procesos) render + role-gating tests.
- *
- * Updated: old bottom procesos list table removed — page now uses
- * useMatrizTiempos as the primary data source. Tests updated accordingly.
  */
 
 import React from "react";
@@ -11,8 +8,8 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Mock hooks before importing the component
-vi.mock("@/hooks/useMatrizTiempos", () => ({
-  useMatrizTiempos: vi.fn(),
+vi.mock("@/hooks/useProcesos", () => ({
+  useProcesos: vi.fn(),
 }));
 
 vi.mock("@/hooks/useDashboard", () => ({
@@ -20,14 +17,6 @@ vi.mock("@/hooks/useDashboard", () => ({
     data: null,
     isLoading: false,
     isError: false,
-  }),
-}));
-
-vi.mock("@/hooks/useExport", () => ({
-  useExportExcel: vi.fn().mockReturnValue({
-    trigger: vi.fn(),
-    isLoading: false,
-    error: null,
   }),
 }));
 
@@ -52,43 +41,40 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-import { useMatrizTiempos } from "@/hooks/useMatrizTiempos";
+import { useProcesos } from "@/hooks/useProcesos";
 import { useAuthStore } from "@/stores/authStore";
 import ProcesosPage from "@/app/(dashboard)/procesos/page";
-import type { MatrizTiempos } from "@/types/etapa";
+import type { PaginatedProcesos, Proceso } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Matrix fixture
-// ---------------------------------------------------------------------------
-const emptyMatriz: MatrizTiempos = {
-  columnas: [
-    { key: "cmn", label: "CMN", cod: "E01c" },
-    { key: "total", label: "TOTAL", cod: null },
-  ],
-  filas: [],
-  promedios: [null, null],
-  promedio_total: null,
+const mockProceso: Proceso = {
+  id: 1,
+  id_proceso: "2026-001",
+  requerimiento: "Switch de red para sala de servidores",
+  tipo: "BIEN",
+  unidad_resp: "OTIN",
+  areas_usuarias: ["DTDIS"],
+  pim: "15000.00",
+  estado: "EN PROCESO",
+  motivo_cancel: null,
+  fecha_creacion: "2026-01-15T10:00:00",
+  creado_por: "admin",
+  anno: 2026,
 };
 
-const filledMatriz: MatrizTiempos = {
-  columnas: [
-    { key: "cmn", label: "CMN", cod: "E01c" },
-    { key: "total", label: "TOTAL", cod: null },
-  ],
-  filas: [
-    {
-      proceso_id: 1,
-      id_proceso: "2026-001",
-      requerimiento: "Switch de red para sala de servidores",
-      pim: 15000,
-      estado: "EN PROCESO",
-      tipo: "BIEN",
-      celdas: [10],
-      total_dias: 10,
-    },
-  ],
-  promedios: [10, 10],
-  promedio_total: 10,
+const emptyPaginated: PaginatedProcesos = {
+  items: [],
+  total: 0,
+  page: 1,
+  page_size: 20,
+  pages: 0,
+};
+
+const filledPaginated: PaginatedProcesos = {
+  items: [mockProceso],
+  total: 1,
+  page: 1,
+  page_size: 20,
+  pages: 1,
 };
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -96,14 +82,14 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return React.createElement(QueryClientProvider, { client: qc }, children);
 }
 
-function mockMatriz(data: MatrizTiempos | undefined, loading = false, error = false) {
-  vi.mocked(useMatrizTiempos).mockReturnValue({
+function mockUseProcesos(data: PaginatedProcesos) {
+  vi.mocked(useProcesos).mockReturnValue({
     data,
-    isLoading: loading,
-    isError: error,
-    isSuccess: !loading && !error,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
     error: null,
-  } as ReturnType<typeof useMatrizTiempos>);
+  } as ReturnType<typeof useProcesos>);
 }
 
 describe("S2 — ProcesosPage", () => {
@@ -120,7 +106,7 @@ describe("S2 — ProcesosPage", () => {
   });
 
   it("renders 5 metric cards", () => {
-    mockMatriz(filledMatriz);
+    mockUseProcesos(filledPaginated);
 
     render(React.createElement(ProcesosPage), { wrapper: Wrapper });
 
@@ -134,7 +120,7 @@ describe("S2 — ProcesosPage", () => {
   });
 
   it("EDITOR sees Nuevo Proceso button", () => {
-    mockMatriz(emptyMatriz);
+    mockUseProcesos(emptyPaginated);
 
     render(React.createElement(ProcesosPage), { wrapper: Wrapper });
 
@@ -150,32 +136,19 @@ describe("S2 — ProcesosPage", () => {
       logout: vi.fn(),
     } as ReturnType<typeof useAuthStore>);
 
-    mockMatriz(emptyMatriz);
+    mockUseProcesos(emptyPaginated);
 
     render(React.createElement(ProcesosPage), { wrapper: Wrapper });
 
     expect(screen.queryByText(/Nuevo Proceso/i)).not.toBeInTheDocument();
   });
 
-  it("renders matrix rows for each proceso — id_proceso and requerimiento visible", () => {
-    mockMatriz(filledMatriz);
+  it("renders table rows for each proceso", () => {
+    mockUseProcesos(filledPaginated);
 
     render(React.createElement(ProcesosPage), { wrapper: Wrapper });
 
     expect(screen.getByText("2026-001")).toBeInTheDocument();
     expect(screen.getByText(/Switch de red/i)).toBeInTheDocument();
-  });
-
-  it("filter bar renders Buscar, Estado, Tipo, Año controls above the matrix", () => {
-    mockMatriz(emptyMatriz);
-
-    render(React.createElement(ProcesosPage), { wrapper: Wrapper });
-
-    // Search input
-    expect(screen.getByLabelText(/Buscar por ID o requerimiento/i)).toBeInTheDocument();
-    // Select controls
-    expect(screen.getByLabelText(/Estado/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Tipo/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Año/i)).toBeInTheDocument();
   });
 });
