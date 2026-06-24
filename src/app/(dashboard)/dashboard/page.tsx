@@ -1,411 +1,557 @@
 "use client";
 
 /**
- * Dashboard Gerencial — single executive view for Adquisiciones TIC.
- * Consolidates KPIs, stage-flow detail, donut chart and acquisitions table.
+ * Dashboard Gerencial — Adquisiciones TIC · INEI / OTIN.
+ * Diseño institucional editorial: pipeline por fase como hero, semáforo de
+ * demora coherente (líneas/bordes/texto/gráfico) y panel ejecutivo derecho.
+ * Wireado a datos reales (flujo-procesos + procesos + presupuesto + métricas).
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { useMetricas, useFlujoProcesos, usePresupuesto } from "@/hooks/useDashboard";
 import { useProcesos } from "@/hooks/useProcesos";
-import { SelectorAnno } from "@/components/dashboard/SelectorAnno";
-import { LineaEtapasHorizontal } from "@/components/dashboard/LineaEtapasHorizontal";
-import { DonutEstados } from "@/components/dashboard/DonutEstados";
-import { COLORES_ESTADO } from "@/lib/constants";
-import type { EstadoProceso, TipoProceso } from "@/types";
+import { faseDeEtapa, FASES } from "@/lib/fases";
+import type { ProcesoFlujo } from "@/types/dashboard";
+import type { Proceso, TipoProceso } from "@/types";
 
-const CURRENT_YEAR = new Date().getFullYear();
-
-const ESTADO_COLOR_MAP: Record<EstadoProceso, keyof typeof COLORES_ESTADO> = {
-  "EN PROCESO": "EN_CURSO",
-  CULMINADO: "COMPLETADO",
-  CANCELADO: "CANCELADO",
+// ── Paleta INEI institucional ───────────────────────────────────────────
+const C = {
+  dark: "#002F6C", mid: "#0B4E9E", light: "#1A6FD4", pale: "#E8F0FB",
+  ok: "#1A7A4A", okBg: "#EAF5EF", okBright: "#22C55E",
+  warn: "#B45309", warnBg: "#FEF3E2", warnBright: "#F59E0B",
+  crit: "#9B1C1C", critBg: "#FEF2F2", critBright: "#EF4444",
+  bg: "#F2F5FA", paper: "#FFFFFF", ink: "#0A1628", ink2: "#2C3E60", ink3: "#7A8BA8",
+  rule: "#D0D9E8", rule2: "#E8EDF5",
+};
+const F = {
+  syne: "'Syne', var(--font-sans), sans-serif",
+  inter: "'Inter', var(--font-sans), system-ui, sans-serif",
+  mono: "'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace",
 };
 
-function EstadoBadge({ estado }: { estado: string }) {
-  const key = ESTADO_COLOR_MAP[estado as EstadoProceso] ?? "OMITIDO";
-  const color = COLORES_ESTADO[key] ?? COLORES_ESTADO.OMITIDO;
-  return (
-    <span
-      className="text-xs font-medium px-2 py-0.5 rounded-lg whitespace-nowrap"
-      style={{ backgroundColor: color.bg, color: color.text }}
-    >
-      {estado}
-    </span>
-  );
+type Sem = "ok" | "warn" | "crit";
+const SEM = {
+  ok: { txt: C.ok, bg: C.okBg, bright: C.okBright, label: "<90d" },
+  warn: { txt: C.warn, bg: C.warnBg, bright: C.warnBright, label: "90–150d" },
+  crit: { txt: C.crit, bg: C.critBg, bright: C.critBright, label: ">150d" },
+} as const;
+
+function cls(dias: number): Sem {
+  if (dias > 150) return "crit";
+  if (dias >= 90) return "warn";
+  return "ok";
 }
 
-const fmt = new Intl.NumberFormat("es-PE", {
-  style: "currency",
-  currency: "PEN",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+const CURRENT_YEAR = new Date().getFullYear();
+const DAY_MS = 86_400_000;
+
+const fmtMoney = new Intl.NumberFormat("es-PE", {
+  style: "currency", currency: "PEN", minimumFractionDigits: 0, maximumFractionDigits: 0,
 });
-
-type BudgetMetricTone = "data" | "pending" | "ratio";
-
-interface BudgetMetricDetail {
-  label: string;
-  value: string;
+function moneyShort(n: number | null | undefined): string {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `S/ ${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `S/ ${Math.round(n / 1_000)}K`;
+  return `S/ ${Math.round(n)}`;
 }
 
-interface BudgetMetricCardProps {
-  label: string;
-  value?: string;
-  sub?: string;
-  tone?: BudgetMetricTone;
-  details?: BudgetMetricDetail[];
+function phaseNum(flujo: ProcesoFlujo | undefined, estado: string): number {
+  if (estado === "CULMINADO") return 5;
+  if (flujo?.etapa_actual) return faseDeEtapa(flujo.etapa_actual);
+  const m = flujo?.fase_actual?.match(/^F([1-5])$/);
+  if (m?.[1]) return Number(m[1]);
+  return 1;
 }
 
-function BudgetMetricCard({
-  label,
-  value,
-  sub,
-  tone = "data",
-  details,
-}: BudgetMetricCardProps) {
-  const toneClasses: Record<BudgetMetricTone, string> = {
-    data: "bg-blue-100 text-primary",
-    pending: "bg-gray-100 text-gray-500",
-    ratio: "bg-emerald-100 text-emerald-700",
+interface Req {
+  id: number;
+  idp: string;
+  desc: string;
+  tipo: TipoProceso | null;
+  dias: number;
+  fase: number;
+  faseNombre: string;
+  pim: number | null;
+  estado: string;
+  sem: Sem;
+}
+
+// ── UI atoms ────────────────────────────────────────────────────────────
+const TIPOS: Array<{ value: TipoProceso | ""; label: string }> = [
+  { value: "", label: "Todos los tipos" },
+  { value: "BIEN", label: "Bien" },
+  { value: "SERVICIO", label: "Servicio" },
+];
+
+const FILTROS: Array<{ key: "todos" | Sem; label: string }> = [
+  { key: "todos", label: "Todos" },
+  { key: "crit", label: "Críticos" },
+  { key: "warn", label: "En alerta" },
+  { key: "ok", label: "En plazo" },
+];
+
+function selectStyle(): React.CSSProperties {
+  return {
+    fontFamily: F.inter, fontSize: 12, color: C.ink2, background: C.paper,
+    border: `1px solid ${C.rule}`, padding: "5px 8px", outline: "none",
   };
+}
+
+export default function DashboardPage() {
+  const [anno, setAnno] = useState(CURRENT_YEAR);
+  const [unidad, setUnidad] = useState("");
+  const [tipo, setTipo] = useState<TipoProceso | "">("");
+  const [filtro, setFiltro] = useState<"todos" | Sem>("todos");
+
+  const metricas = useMetricas(anno);
+  const flujo = useFlujoProcesos(anno);
+  const presupuesto = usePresupuesto(anno);
+  const procesosQuery = useProcesos({ anno, page_size: 100 });
+
+  const loading = flujo.isLoading || procesosQuery.isLoading;
+  const procesosList: Proceso[] = procesosQuery.data?.items ?? [];
+  const flujoById = useMemo(() => {
+    const map = new Map<number, ProcesoFlujo>();
+    for (const f of flujo.data?.procesos ?? []) map.set(f.id, f);
+    return map;
+  }, [flujo.data]);
+
+  const unidadOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of procesosList) if (p.unidad_resp) seen.add(p.unidad_resp);
+    return Array.from(seen).sort();
+  }, [procesosList]);
+
+  // ── construir requerimientos (datos reales) ────────────────────────────
+  const reqs: Req[] = useMemo(() => {
+    return procesosList
+      .filter((p) => p.estado !== "CANCELADO")
+      .filter((p) => (!tipo || p.tipo === tipo) && (!unidad || p.unidad_resp === unidad))
+      .map((p) => {
+        const fl = flujoById.get(p.id);
+        const dias = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(p.fecha_creacion).getTime()) / DAY_MS)
+        );
+        const fase = phaseNum(fl, p.estado);
+        const faseDef = FASES.find((x) => x.num === fase);
+        return {
+          id: p.id,
+          idp: p.id_proceso,
+          desc: p.requerimiento,
+          tipo: p.tipo,
+          dias,
+          fase,
+          faseNombre: faseDef?.corto ?? "—",
+          pim: p.pim != null ? parseFloat(p.pim) : null,
+          estado: p.estado,
+          sem: cls(dias),
+        };
+      });
+  }, [procesosList, flujoById, tipo, unidad]);
+
+  const activos = useMemo(() => reqs.filter((r) => r.estado === "EN PROCESO"), [reqs]);
+
+  // ── KPIs derivados ─────────────────────────────────────────────────────
+  const okN = activos.filter((r) => r.sem === "ok").length;
+  const warnN = activos.filter((r) => r.sem === "warn").length;
+  const critN = activos.filter((r) => r.sem === "crit").length;
+  const promDias = activos.length
+    ? Math.round(activos.reduce((s, r) => s + r.dias, 0) / activos.length)
+    : 0;
+  const masDemorado = useMemo(
+    () => [...activos].sort((a, b) => b.dias - a.dias)[0],
+    [activos]
+  );
+  const LIMITE = 150;
+
+  // fase con más carga
+  const cargaPorFase = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const r of activos) counts.set(r.fase, (counts.get(r.fase) ?? 0) + 1);
+    let bestNum = 0, bestCount = -1;
+    for (const f of FASES) {
+      const c = counts.get(f.num) ?? 0;
+      if (c > bestCount) { bestCount = c; bestNum = f.num; }
+    }
+    const def = FASES.find((x) => x.num === bestNum);
+    return { nombre: def?.corto ?? "—", count: bestCount < 0 ? 0 : bestCount };
+  }, [activos]);
+
+  const tot = presupuesto.data?.totales;
+  const pim = tot?.pim ?? null;
+  const cert = tot?.monto_cert_total ?? null;
+  const ocs = tot?.monto_ocs ?? null;
+  const ejecucionPct = pim && pim > 0 && ocs != null ? (ocs / pim) * 100 : 0;
+
+  // ── pipeline (filtro semáforo aplicado) ────────────────────────────────
+  const reqsFiltrados = useMemo(
+    () => (filtro === "todos" ? reqs : reqs.filter((r) => r.sem === filtro)),
+    [reqs, filtro]
+  );
+  const porFase = useMemo(() => {
+    const map = new Map<number, Req[]>(FASES.map((f) => [f.num, []]));
+    for (const r of reqsFiltrados) map.get(r.fase)?.push(r);
+    for (const f of FASES) map.get(f.num)?.sort((a, b) => b.dias - a.dias);
+    return map;
+  }, [reqsFiltrados]);
+
+  const criticos = useMemo(
+    () => [...activos].filter((r) => r.sem === "crit").sort((a, b) => b.dias - a.dias),
+    [activos]
+  );
+
+  const chartData = [
+    { name: "<90d", v: okN, c: C.okBright },
+    { name: "90–150d", v: warnN, c: C.warnBright },
+    { name: ">150d", v: critN, c: C.critBright },
+  ];
+
+  const annos = [CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2];
 
   return (
-    <div className="bg-white border border-outline shadow-card rounded-lg p-4 min-h-[108px] flex flex-col justify-between">
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] font-semibold text-gray-500 uppercase leading-tight">
-          {label}
-        </span>
-        <span
-          className={`mt-0.5 h-2 w-2 rounded-full flex-shrink-0 ${toneClasses[tone]}`}
-          aria-hidden="true"
+    <div style={{ background: C.bg, color: C.ink, fontFamily: F.inter, margin: -16, padding: 16 }}>
+      {/* ── TOPBAR ─────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between",
+          gap: 12, background: C.paper, borderBottom: `2px solid ${C.dark}`,
+          padding: "10px 14px", marginBottom: 14,
+        }}
+      >
+        <div>
+          <div style={{ fontFamily: F.syne, fontWeight: 700, fontSize: 16, color: C.dark, letterSpacing: ".2px" }}>
+            Adquisiciones TIC
+          </div>
+          <div style={{ fontFamily: F.inter, fontSize: 11, color: C.ink3 }}>
+            Seguimiento de requerimientos · OTIN
+          </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <select aria-label="Año" value={anno} onChange={(e) => setAnno(Number(e.target.value))} style={selectStyle()}>
+            {annos.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select aria-label="Unidad" value={unidad} onChange={(e) => setUnidad(e.target.value)} style={selectStyle()}>
+            <option value="">Todas las unidades</option>
+            {unidadOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <select aria-label="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value as TipoProceso | "")} style={selectStyle()}>
+            {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.mono, fontSize: 11, color: C.ok }}>
+            <span className="inei-pulse" style={{ width: 7, height: 7, background: C.okBright, borderRadius: "50%" }} />
+            En línea
+          </span>
+          <Link
+            href="/presentacion"
+            style={{
+              fontFamily: F.syne, fontSize: 11, fontWeight: 700, letterSpacing: ".5px",
+              textTransform: "uppercase", background: C.dark, color: "#fff", padding: "7px 12px",
+            }}
+          >
+            Presentación
+          </Link>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes ineiPulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+        .inei-pulse{ animation: ineiPulse 1.6s ease-in-out infinite; }
+        .rc-card:hover{ background:#F0F5FF !important; }
+        .flt:hover{ background:${C.pale}; color:${C.mid}; }
+      `}</style>
+
+      {/* ── 1. PULSO — 3 KPIs ──────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", background: C.paper, border: `1px solid ${C.rule}`, marginBottom: 14 }}>
+        <KpiCell
+          tone={C.okBright}
+          label="Requerimientos activos"
+          value={String(activos.length)}
+          valueColor={C.ok}
+          sub="en proceso de compra"
+          foot={`${okN} en plazo · ${warnN + critN} en alerta o crítico`}
+          right
+        />
+        <KpiCell
+          tone={C.warnBright}
+          label="Promedio de demora"
+          value={`${promDias}`}
+          unit="días"
+          valueColor={C.warn}
+          sub="sobre requerimientos activos"
+          foot={`límite jefatura ${LIMITE}d · ${promDias > LIMITE ? `exceso ${promDias - LIMITE}d` : "dentro del límite"}`}
+          right
+        />
+        <KpiCell
+          tone={C.critBright}
+          label="Críticos +150 días"
+          value={String(critN)}
+          valueColor={C.crit}
+          sub="requieren acción inmediata"
+          foot={
+            masDemorado && masDemorado.sem === "crit"
+              ? `${masDemorado.idp} (${masDemorado.dias}d) · ${masDemorado.faseNombre}`
+              : "sin requerimientos críticos"
+          }
         />
       </div>
-      <div>
-        {details ? (
-          <div className="space-y-1">
-            {details.map((detail) => (
-              <div
-                key={detail.label}
-                className="flex items-baseline justify-between gap-2 text-xs"
-              >
-                <span className="text-gray-500 leading-tight">{detail.label}</span>
-                <span className="font-bold text-primary whitespace-nowrap">
-                  {detail.value}
-                </span>
+
+      {/* ── 2. STRIP PIM — 4 columnas ──────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", background: C.paper, border: `1px solid ${C.rule}`, marginBottom: 14 }}>
+        <PimCell label="PIM total" value={pim != null ? fmtMoney.format(pim) : "—"} sub="presupuesto modificado" pct={100} />
+        <PimCell label="Certificado" value={cert != null ? fmtMoney.format(cert) : "—"} sub="certificaciones registradas" pct={pim && cert ? (cert / pim) * 100 : 0} color={C.mid} />
+        <PimCell label="Comprometido" value={ocs != null ? fmtMoney.format(ocs) : "—"} sub="monto O/S registrado" pct={pim && ocs ? (ocs / pim) * 100 : 0} color={C.light} />
+        <PimCell label="Devengado" value="—" sub="sin fuente registrada" pct={0} muted />
+      </div>
+
+      {/* ── 3. PIPELINE HERO + PANEL DERECHO ───────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 264px", border: `1px solid ${C.rule}`, background: C.paper, marginBottom: 14 }}>
+        {/* PIPELINE */}
+        <div style={{ minWidth: 0 }}>
+          {/* cabecera */}
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderBottom: `1px solid ${C.rule}` }}>
+            <div style={{ fontFamily: F.syne, fontWeight: 700, fontSize: 13, textTransform: "uppercase", color: C.dark, borderBottom: `2px solid ${C.dark}`, paddingBottom: 3, letterSpacing: ".4px" }}>
+              Pipeline por fase
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 4 }}>
+                {FILTROS.map((f) => {
+                  const active = filtro === f.key;
+                  return (
+                    <button
+                      key={f.key}
+                      className="flt"
+                      onClick={() => setFiltro(f.key)}
+                      style={{
+                        fontFamily: F.syne, fontSize: 10, fontWeight: 600, textTransform: "uppercase",
+                        letterSpacing: ".3px", padding: "5px 9px", cursor: "pointer",
+                        border: `1px solid ${active ? C.dark : C.rule}`,
+                        background: active ? C.dark : C.paper, color: active ? "#fff" : C.ink2,
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {(["ok", "warn", "crit"] as Sem[]).map((s) => (
+                  <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.mono, fontSize: 9, color: C.ink3 }}>
+                    <span style={{ width: 7, height: 7, background: SEM[s].bright }} />
+                    {SEM[s].label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* cabecera de fases */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", background: C.pale }}>
+            {FASES.map((f) => (
+              <div key={f.id} style={{ padding: "8px 10px", borderRight: `1px solid ${C.rule}` }}>
+                <div style={{ fontFamily: F.mono, fontSize: 8, color: C.mid }}>Fase {f.num}</div>
+                <div style={{ fontFamily: F.syne, fontWeight: 700, fontSize: 11, color: C.dark, lineHeight: 1.2, marginTop: 2 }}>{f.corto}</div>
+                <div style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 22, color: C.dark, marginTop: 2 }}>
+                  {loading ? "·" : (porFase.get(f.num)?.length ?? 0)}
+                </div>
               </div>
             ))}
           </div>
-        ) : (
-          <span className="block text-xl font-bold text-primary leading-tight break-words">
-            {value}
-          </span>
-        )}
-        {sub && !details && (
-          <span className="mt-1 block text-[11px] text-gray-400 leading-tight">
-            {sub}
-          </span>
-        )}
+
+          {/* columnas */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", minHeight: 280 }}>
+            {FASES.map((f) => {
+              const list = porFase.get(f.num) ?? [];
+              return (
+                <div key={f.id} style={{ padding: 8, borderRight: `1px solid ${C.rule}`, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {loading ? (
+                    <div style={{ textAlign: "center", color: C.ink3, fontFamily: F.mono, fontSize: 18, paddingTop: 20 }}>·</div>
+                  ) : list.length === 0 ? (
+                    <div style={{ textAlign: "center", color: C.rule, fontFamily: F.mono, fontSize: 20, paddingTop: 20 }}>—</div>
+                  ) : (
+                    list.map((r) => <ReqCard key={r.id} r={r} />)
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* PANEL DERECHO */}
+        <div style={{ borderLeft: `1px solid ${C.rule}`, display: "flex", flexDirection: "column" }}>
+          {/* A. Distribución */}
+          <PanelHeader title="Distribución de demora" note="reqs. activos" />
+          <div style={{ padding: "6px 10px 12px" }}>
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart layout="vertical" data={chartData} margin={{ top: 4, right: 16, bottom: 0, left: 4 }}>
+                <XAxis type="number" allowDecimals={false} tick={{ fontFamily: F.mono, fontSize: 8, fill: C.ink3 }} axisLine={{ stroke: C.rule }} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={48} tick={{ fontFamily: F.mono, fontSize: 8, fill: C.ink3 }} axisLine={{ stroke: C.rule }} tickLine={false} />
+                <Tooltip cursor={{ fill: C.pale }} contentStyle={{ fontFamily: F.mono, fontSize: 11, border: `1px solid ${C.rule}`, borderRadius: 0 }} />
+                <Bar dataKey="v" barSize={18} isAnimationActive={false}>
+                  {chartData.map((d, i) => <Cell key={i} fill={d.c} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* B. Resumen ejecutivo */}
+          <PanelHeader title="Resumen ejecutivo" note="" />
+          <div style={{ padding: "4px 10px 10px" }}>
+            <ResumenRow k="Total requerimientos" v={String(reqs.length)} />
+            <ResumenRow k="Más demorado" v={masDemorado ? `${masDemorado.idp} · ${masDemorado.dias}d` : "—"} color={masDemorado?.sem === "crit" ? C.crit : C.ink2} />
+            <ResumenRow k="Promedio días" v={`${promDias}d`} color={C.warn} />
+            <ResumenRow k="Fase con más carga" v={`${cargaPorFase.nombre} (${cargaPorFase.count})`} />
+            <ResumenRow k="PIM disponible" v={moneyShort(pim)} />
+            <ResumenRow k="Ejecución" v={`${ejecucionPct.toFixed(0)}%`} color={ejecucionPct === 0 ? C.ink3 : C.ink2} last />
+          </div>
+
+          {/* C. Alertas */}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "8px 10px 6px", borderTop: `1px solid ${C.rule}` }}>
+            <span style={{ fontFamily: F.syne, fontWeight: 700, fontSize: 11, textTransform: "uppercase", color: C.crit, letterSpacing: ".4px" }}>Alertas</span>
+            <span style={{ fontFamily: F.mono, fontSize: 8, color: C.ink3 }}>acción requerida</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.critBg, padding: "5px 10px" }}>
+            <span style={{ fontFamily: F.syne, fontSize: 10, fontWeight: 600, color: C.crit, textTransform: "uppercase" }}>Críticos</span>
+            <span style={{ fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: "#fff", background: C.crit, padding: "1px 7px" }}>{criticos.length}</span>
+          </div>
+          <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {criticos.length === 0 ? (
+              <span style={{ fontFamily: F.inter, fontSize: 11, color: C.ink3 }}>Sin requerimientos críticos.</span>
+            ) : (
+              criticos.slice(0, 6).map((r) => (
+                <div key={r.id} style={{ borderLeft: `3px solid ${C.crit}`, paddingLeft: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                    <span style={{ fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: C.crit }}>{r.idp}</span>
+                    <span style={{ fontFamily: F.mono, fontSize: 11, fontWeight: 700, color: C.crit }}>{r.dias}d</span>
+                  </div>
+                  <div style={{ fontFamily: F.inter, fontSize: 11, color: C.ink2, lineHeight: 1.3, marginTop: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {r.desc}
+                  </div>
+                  <div style={{ fontFamily: F.mono, fontSize: 8, color: C.ink3, marginTop: 2 }}>
+                    {r.faseNombre} · {moneyShort(r.pim)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── FOOTER ─────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, fontFamily: F.mono, fontSize: 9, color: C.ink3, padding: "4px 2px" }}>
+        <span>INEI · OTIN — Oficina de Tecnología de la Información</span>
+        <span>Ejercicio fiscal {anno} · {reqs.length} requerimientos · pipeline en vivo</span>
+      </div>
+
+      {(metricas.isError || presupuesto.isError || flujo.isError) && (
+        <div style={{ marginTop: 10, background: C.critBg, border: `1px solid ${C.crit}`, color: C.crit, fontFamily: F.inter, fontSize: 12, padding: 10 }} role="alert">
+          Error al cargar indicadores. Verifique su conexión con el backend.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── sub-componentes ───────────────────────────────────────────────────────
+function KpiCell({
+  tone, label, value, unit, valueColor, sub, foot, right,
+}: {
+  tone: string; label: string; value: string; unit?: string; valueColor: string;
+  sub: string; foot: string; right?: boolean;
+}) {
+  return (
+    <div style={{ borderRight: right ? `1px solid ${C.rule}` : undefined, position: "relative" }}>
+      <div style={{ height: 3, background: tone }} />
+      <div style={{ padding: "12px 14px 14px" }}>
+        <div style={{ fontFamily: F.syne, fontSize: 9, fontWeight: 600, textTransform: "uppercase", color: C.ink3, letterSpacing: ".5px" }}>{label}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 6 }}>
+          <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 44, lineHeight: 1, color: valueColor }}>{value}</span>
+          {unit && <span style={{ fontFamily: F.mono, fontSize: 13, color: valueColor }}>{unit}</span>}
+        </div>
+        <div style={{ fontFamily: F.inter, fontSize: 10, color: C.ink3, marginTop: 6 }}>{sub}</div>
+        <div style={{ borderTop: `1px solid ${C.rule2}`, marginTop: 10, paddingTop: 8, fontFamily: F.mono, fontSize: 9, color: C.ink2 }}>{foot}</div>
       </div>
     </div>
   );
 }
 
-// Available unidad_resp values derived from loaded data
-const TIPOS: Array<{ value: TipoProceso | ""; label: string }> = [
-  { value: "",         label: "Todos los tipos" },
-  { value: "BIEN",     label: "Bien" },
-  { value: "SERVICIO", label: "Servicio" },
-];
-
-export default function DashboardPage() {
-  const [anno, setAnno] = useState(CURRENT_YEAR);
-  const [unidad, setUnidad] = useState<string>("");
-  const [tipo, setTipo]     = useState<TipoProceso | "">("");
-
-  // ── data sources ──────────────────────────────────────────────────
-  const metricas     = useMetricas(anno);
-  const flujo        = useFlujoProcesos(anno);
-  const presupuesto  = usePresupuesto(anno);
-  // Load procesos for the year; tipo/unidad are filtered client-side below
-  // (the backend `area` filter targets areas_usuarias, not unidad_resp).
-  // page_size capped at 100 by the backend (le=100).
-  const procesosQuery = useProcesos({ anno, page_size: 100 });
-
-  const m         = metricas.data;
-  const p         = presupuesto.data?.totales;
-  const flujoList = flujo.data?.procesos ?? [];
-  const procesosList = procesosQuery.data?.items ?? [];
-
-  // Client-side filter by tipo + unidad_resp
-  const procesosFiltrados = useMemo(
-    () =>
-      procesosList.filter(
-        (p) =>
-          (!tipo || p.tipo === tipo) &&
-          (!unidad || p.unidad_resp === unidad)
-      ),
-    [procesosList, tipo, unidad]
-  );
-
-  // ── derived values ────────────────────────────────────────────────
-  const moneyOrDash = (value: number | null | undefined) =>
-    value != null ? fmt.format(value) : "—";
-  const percentOrDash = (value: number | null | undefined) =>
-    value != null ? `${value.toFixed(1)}%` : "—";
-
-  const executionCards: BudgetMetricCardProps[] = [
-    {
-      label: "PIA",
-      value: moneyOrDash(p?.pia),
-      sub: "presupuesto inicial",
-      tone: p?.pia != null ? "data" : "pending",
-    },
-    {
-      label: "PIM",
-      value: moneyOrDash(p?.pim),
-      sub: "presupuesto modificado",
-    },
-    {
-      label: "Certificación",
-      value: moneyOrDash(p?.monto_cert_total),
-      sub: "certificaciones registradas",
-    },
-    {
-      label: "Compromiso Anual",
-      value: moneyOrDash(p?.monto_ocs),
-      sub: "monto O/S registrado",
-    },
-    {
-      label: "Ejecución del gasto",
-      details: [
-        {
-          label: "Atención mensual",
-          value: moneyOrDash(p?.atencion_compromiso_mensual),
-        },
-        {
-          label: "Devengado",
-          value: moneyOrDash(p?.devengado),
-        },
-        {
-          label: "Girado",
-          value: moneyOrDash(p?.girado),
-        },
-      ],
-      tone:
-        p?.atencion_compromiso_mensual != null ||
-        p?.devengado != null ||
-        p?.girado != null
-          ? "data"
-          : "pending",
-    },
-    {
-      label: "Avance %",
-      value: percentOrDash(p?.avance_ejecucion),
-      sub: "devengado/PIM",
-      tone: "ratio",
-    },
-  ];
-
-  // Unidad options from loaded procesos
-  const unidadOptions = useMemo(() => {
-    const seen = new Set<string>();
-    for (const p of procesosList) {
-      if (p.unidad_resp) seen.add(p.unidad_resp);
-    }
-    return Array.from(seen).sort();
-  }, [procesosList]);
-
-  // Phase board and table data — filtered by tipo/unidad via the client-filtered set
-  const filteredFlujo = useMemo(() => {
-    if (!unidad && !tipo) return flujoList;
-    const allowedIds = new Set(procesosFiltrados.map((p) => p.id));
-    return flujoList.filter((p) => allowedIds.has(p.id));
-  }, [flujoList, procesosFiltrados, unidad, tipo]);
-
-  // Merge flujo porcentaje with procesosQuery for the table
-  const porcentajeById = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const p of flujoList) map.set(p.id, p.porcentaje);
-    return map;
-  }, [flujoList]);
-
+function PimCell({
+  label, value, sub, pct, color = C.dark, muted,
+}: {
+  label: string; value: string; sub: string; pct: number; color?: string; muted?: boolean;
+}) {
+  const w = Math.max(0, Math.min(100, pct));
   return (
-    <div className="space-y-6">
-      {/* ── 1. Header ───────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-primary">
-          Dashboard Adquisiciones TIC {anno}
-        </h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <SelectorAnno value={anno} onChange={setAnno} />
+    <div style={{ padding: "10px 14px 0", borderRight: `1px solid ${C.rule}` }}>
+      <div style={{ fontFamily: F.mono, fontSize: 8, textTransform: "uppercase", color: C.ink3, letterSpacing: ".5px" }}>{label}</div>
+      <div style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 18, color: muted ? C.ink3 : C.ink, marginTop: 4 }}>{value}</div>
+      <div style={{ fontFamily: F.inter, fontSize: 9, color: C.ink3, marginTop: 2 }}>{sub}</div>
+      <div style={{ height: 2, background: C.rule2, marginTop: 8 }}>
+        <div style={{ height: 2, width: `${w}%`, background: muted ? C.rule : color }} />
+      </div>
+    </div>
+  );
+}
 
-          {/* Unidad Responsable filter */}
-          <div className="flex items-center gap-1.5">
-            <label htmlFor="filter-unidad" className="text-xs font-medium text-gray-600 whitespace-nowrap">
-              Unidad
-            </label>
-            <select
-              id="filter-unidad"
-              value={unidad}
-              onChange={(e) => setUnidad(e.target.value)}
-              className="border border-outline rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">Todas</option>
-              {unidadOptions.map((u) => (
-                <option key={u} value={u}>{u}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Tipo filter */}
-          <div className="flex items-center gap-1.5">
-            <label htmlFor="filter-tipo" className="text-xs font-medium text-gray-600 whitespace-nowrap">
-              Tipo
-            </label>
-            <select
-              id="filter-tipo"
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value as TipoProceso | "")}
-              className="border border-outline rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {TIPOS.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <Link
-            href="/presentacion"
-            className="text-xs border border-primary text-primary rounded px-3 py-1.5
-                       hover:bg-primary hover:text-white transition-colors"
-          >
-            Modo Presentación
-          </Link>
+function ReqCard({ r }: { r: Req }) {
+  const s = SEM[r.sem];
+  const tipoColor = r.tipo === "SERVICIO" ? C.ok : C.mid;
+  return (
+    <div
+      className="rc-card"
+      style={{ background: C.paper, borderLeft: `3px solid ${s.bright}`, border: `1px solid ${C.rule2}`, borderLeftWidth: 3, borderLeftColor: s.bright }}
+      title={r.desc}
+    >
+      <div style={{ padding: "7px 10px 0 10px" }}>
+        <div style={{ fontFamily: F.mono, fontSize: 8, color: C.ink3 }}>{r.idp}</div>
+        <div style={{ fontFamily: F.inter, fontWeight: 600, fontSize: 11, color: C.ink, lineHeight: 1.3, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {r.desc}
         </div>
       </div>
-
-      {/* ── 2. Budget execution cards ───────────────────────────────── */}
-      {(metricas.isError || presupuesto.isError) && (
-        <div className="bg-red-50 border border-red-200 rounded p-4 text-red-700 text-sm" role="alert">
-          Error al cargar indicadores. Verifique su conexión.
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {executionCards.map((card) => (
-          <BudgetMetricCard key={card.label} {...card} />
-        ))}
+      <div style={{ borderTop: `1px solid ${C.rule2}`, marginTop: 7, display: "grid", gridTemplateColumns: "1fr 1px 1fr 1px 1fr" }}>
+        <RcPart label="Días" value={`${r.dias}d`} color={s.txt} />
+        <div style={{ background: C.rule2 }} />
+        <RcPart label="Tipo" value={r.tipo === "SERVICIO" ? "Servicio" : r.tipo === "BIEN" ? "Bien" : "—"} color={tipoColor} />
+        <div style={{ background: C.rule2 }} />
+        <RcPart label="PIM" value={moneyShort(r.pim)} color={C.ink2} />
       </div>
+    </div>
+  );
+}
 
-      {/* ── 3. Centerpiece — phase board ────────────────────────────── */}
-      <LineaEtapasHorizontal
-        procesos={filteredFlujo}
-        isLoading={flujo.isLoading || procesosQuery.isLoading}
-      />
+function RcPart({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ padding: "5px 7px 6px" }}>
+      <div style={{ fontFamily: F.mono, fontSize: 7, textTransform: "uppercase", color: C.ink3 }}>{label}</div>
+      <div style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 13, color, marginTop: 1 }}>{value}</div>
+    </div>
+  );
+}
 
-      {/* ── 4. Bottom row: donut + table ────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* LEFT — donut */}
-        <div className="lg:col-span-2">
-          <DonutEstados
-            enProceso={m?.en_proceso ?? 0}
-            culminados={m?.culminados ?? 0}
-            cancelados={m?.cancelados ?? 0}
-          />
-        </div>
+function PanelHeader({ title, note }: { title: string; note: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "8px 10px 6px", borderBottom: `1px solid ${C.rule2}` }}>
+      <span style={{ fontFamily: F.syne, fontWeight: 700, fontSize: 11, textTransform: "uppercase", color: C.dark, letterSpacing: ".4px" }}>{title}</span>
+      {note && <span style={{ fontFamily: F.mono, fontSize: 8, color: C.ink3 }}>{note}</span>}
+    </div>
+  );
+}
 
-        {/* RIGHT — acquisitions table */}
-        <div className="lg:col-span-3 bg-white border border-outline shadow-card rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-outline">
-            <h2 className="text-sm font-semibold text-gray-700">
-              Adquisiciones {anno}
-              {filteredFlujo.length !== flujoList.length && (
-                <span className="ml-2 text-xs font-normal text-gray-400">
-                  ({filteredFlujo.length} de {flujoList.length})
-                </span>
-              )}
-            </h2>
-          </div>
-
-          {procesosQuery.isLoading || flujo.isLoading ? (
-            <div className="p-6 text-center text-gray-400 text-sm" role="status" aria-live="polite">
-              Cargando…
-            </div>
-          ) : filteredFlujo.length === 0 ? (
-            <div className="p-6 text-center text-gray-400 text-sm">
-              Sin datos para <strong>{anno}</strong>. Seleccione otro año o registre procesos.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-outline text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    <th className="px-4 py-3 text-left">Requerimiento</th>
-                    <th className="px-4 py-3 text-left">Tipo</th>
-                    <th className="px-4 py-3 text-right">PIM</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-right">Avance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline">
-                  {filteredFlujo.map((fp) => {
-                    const proc = procesosList.find((p) => p.id === fp.id);
-                    const pimVal = proc?.pim != null ? parseFloat(proc.pim) : null;
-                    const avance = porcentajeById.get(fp.id) ?? 0;
-                    return (
-                      <tr
-                        key={fp.id}
-                        className="hover:bg-gray-50 transition-colors"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="font-mono text-xs text-gray-400">{fp.id_proceso}</div>
-                          <div
-                            className="text-gray-800 text-xs mt-0.5 line-clamp-2"
-                            title={fp.requerimiento}
-                          >
-                            {fp.requerimiento}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
-                          {proc?.tipo ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-700 text-right whitespace-nowrap">
-                          {pimVal != null ? fmt.format(pimVal) : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <EstadoBadge estado={fp.estado} />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${avance}%`,
-                                  backgroundColor: COLORES_ESTADO.EN_CURSO.bg,
-                                }}
-                                role="progressbar"
-                                aria-valuenow={avance}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                              />
-                            </div>
-                            <span className="text-xs font-medium text-gray-600 w-9 text-right">
-                              {avance.toFixed(0)}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+function ResumenRow({ k, v, color = C.ink2, last }: { k: string; v: string; color?: string; last?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "5px 0", borderBottom: last ? undefined : `1px solid ${C.rule2}` }}>
+      <span style={{ fontFamily: F.inter, fontSize: 11, color: C.ink3 }}>{k}</span>
+      <span style={{ fontFamily: F.mono, fontWeight: 700, fontSize: 12, color }}>{v}</span>
     </div>
   );
 }
