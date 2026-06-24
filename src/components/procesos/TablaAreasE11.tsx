@@ -36,6 +36,7 @@ interface RowState {
 // Estado badge label helper (mirrors EtapaCard.EstadoBadge)
 function estadoLabel(estado: string): string {
   if (estado === 'NO_APLICA') return 'No aplica';
+  if (estado === 'SIN_EVIDENCIA') return 'Sin evidencia';
   if (estado === 'EN_CURSO') return 'En Curso';
   if (estado === 'COMPLETADO') return 'Completado';
   if (estado === 'PENDIENTE') return 'Pendiente';
@@ -183,12 +184,7 @@ export function TablaAreasE11({
               const fila = filas.find((f) => f.area_usuaria === area);
               const row: RowState = rowState[area] ?? { montoCert: '', fecha: '', editing: false };
               const estado = fila?.estado_etapa ?? 'PENDIENTE';
-              const estadoKey = (
-                estado === 'EN_CURSO' ? 'EN_CURSO' :
-                estado === 'COMPLETADO' ? 'COMPLETADO' :
-                estado === 'NO_APLICA' ? 'NO_APLICA' :
-                'PENDIENTE'
-              ) as keyof typeof COLORES_ESTADO;
+              const estadoKey = (estado in COLORES_ESTADO ? estado : 'PENDIENTE') as keyof typeof COLORES_ESTADO;
               const estadoColor = COLORES_ESTADO[estadoKey];
               const esNoAplica = estado === 'NO_APLICA';
               const diasDemora = getDiasDemoraArea(

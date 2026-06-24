@@ -14,6 +14,7 @@ const ESTADO_LABEL: Record<string, string> = {
   EN_CURSO: "En Curso",
   PENDIENTE: "Pendiente",
   NO_APLICA: "No aplica",
+  SIN_EVIDENCIA: "Sin evidencia",
   OMITIDO: "Omitido",
   CANCELADO: "Cancelado",
 };
@@ -26,12 +27,38 @@ function Check({ size = 10 }: { size?: number }) {
   );
 }
 
+function diffDias(fechaInicio: string | null, fechaFin: string | null): number | null {
+  if (!fechaInicio || !fechaFin) return null;
+  const inicio = new Date(`${fechaInicio}T00:00:00`);
+  const fin = new Date(`${fechaFin}T00:00:00`);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) return null;
+  return Math.max(0, Math.round((fin.getTime() - inicio.getTime()) / 86_400_000));
+}
+
+function diasEtapa(etapa: EtapaAgrupada): number | null {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const valores = [...etapa.filas, ...etapa.rondas]
+    .map((item) =>
+      item.dias ?? diffDias(
+        item.fecha_inicio,
+        item.fecha_fin ?? (etapa.estado === "EN_CURSO" ? hoy : null)
+      )
+    )
+    .filter((dias): dias is number => dias !== null);
+  return valores.length > 0 ? Math.max(...valores) : null;
+}
+
+function estadoCompletadoVisual(estado: string): boolean {
+  return estado === "COMPLETADO" || estado === "SIN_EVIDENCIA" || estado === "NO_APLICA";
+}
+
 interface ChipProps { etapa: EtapaAgrupada; current: boolean; avance: boolean; onSelect: (e: EtapaAgrupada) => void; }
 
 function Chip({ etapa, current, avance, onSelect }: ChipProps) {
   const actor = COLORES_ACTOR[etapa.area_responsable as keyof typeof COLORES_ACTOR] ?? COLORES_ACTOR.OTIN;
   const est = COLORES_ESTADO[etapa.estado as keyof typeof COLORES_ESTADO] ?? COLORES_ESTADO.PENDIENTE;
-  const done = etapa.estado === "COMPLETADO";
+  const done = estadoCompletadoVisual(etapa.estado);
+  const dias = diasEtapa(etapa);
 
   return (
     <button
@@ -64,9 +91,16 @@ function Chip({ etapa, current, avance, onSelect }: ChipProps) {
             <span className="text-[8px] font-extrabold tracking-wide text-white bg-emerald-600 px-1.5 py-0.5 rounded">+ AVANZ.</span>
           )}
         </div>
-        <span className={`text-xs font-semibold leading-tight ${etapa.es_bucle ? "italic text-amber-800" : "text-gray-800"}`}>
-          {nombreCorto(etapa.nombre)}
-        </span>
+        <div className="flex items-start gap-2">
+          <span className={`text-xs font-semibold leading-tight flex-1 min-w-0 ${etapa.es_bucle ? "italic text-amber-800" : "text-gray-800"}`}>
+            {nombreCorto(etapa.nombre)}
+          </span>
+          {dias !== null && (
+            <span className="text-[9.5px] font-bold font-mono text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-1.5 py-0.5 flex-shrink-0">
+              {dias} días
+            </span>
+          )}
+        </div>
         {current && (
           <span className="mt-0.5 inline-block text-[10.5px] font-bold text-white bg-primary px-2.5 py-1 rounded-md w-fit">
             Registrar avance
@@ -90,7 +124,7 @@ export function MapaProceso({ etapas, progreso, onSelect, etapaActualAvance }: M
     <div className="flex flex-col gap-3">
       {/* Leyenda */}
       <div className="flex flex-wrap items-center gap-3.5">
-        {(["COMPLETADO", "EN_CURSO", "PENDIENTE"] as const).map((k) => (
+        {(["COMPLETADO", "EN_CURSO", "PENDIENTE", "SIN_EVIDENCIA"] as const).map((k) => (
           <span key={k} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-500">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORES_ESTADO[k].bar }} />
             {ESTADO_LABEL[k]}

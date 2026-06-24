@@ -39,6 +39,7 @@ const ESTADO_LABEL: Record<string, string> = {
   EN_CURSO: "En Curso",
   PENDIENTE: "Pendiente",
   NO_APLICA: "No aplica",
+  SIN_EVIDENCIA: "Sin evidencia",
   OMITIDO: "Omitido",
   CANCELADO: "Cancelado",
 };
@@ -65,7 +66,7 @@ function DiagonalIcon() {
 function NavDot({ estado }: { estado: string }) {
   const col = COLORES_ESTADO[estado as keyof typeof COLORES_ESTADO] ?? COLORES_ESTADO.PENDIENTE;
 
-  if (estado === "COMPLETADO") {
+  if (estado === "COMPLETADO" || estado === "SIN_EVIDENCIA") {
     return (
       <span
         className="w-[15px] h-[15px] rounded-full border-2 flex items-center justify-center flex-shrink-0"
@@ -166,11 +167,19 @@ interface NavFaseProps {
 }
 
 function NavFase({ num, nombre, etapas, etapaActual, etapaSeleccionada, onSelect }: NavFaseProps) {
-  const completadas = etapas.filter((e) => e.estado === "COMPLETADO").length;
+  const completadas = etapas.filter(
+    (e) => e.estado === "COMPLETADO" || e.estado === "SIN_EVIDENCIA"
+  ).length;
   const total = etapas.filter((e) => !e.es_bucle).length;
   const est = etapas.some((e) => e.estado === "EN_CURSO")
     ? COLORES_ESTADO.EN_CURSO
-    : etapas.every((e) => e.es_bucle || e.estado === "COMPLETADO" || e.estado === "NO_APLICA")
+    : etapas.every(
+      (e) =>
+        e.es_bucle ||
+        e.estado === "COMPLETADO" ||
+        e.estado === "NO_APLICA" ||
+        e.estado === "SIN_EVIDENCIA"
+    )
     ? COLORES_ESTADO.COMPLETADO
     : COLORES_ESTADO.PENDIENTE;
 
@@ -284,7 +293,7 @@ function PanelHero({ etapa }: PanelHeroProps) {
 // ============================================================
 // InlineForm — form básico para etapas simples
 // ============================================================
-const ESTADO_OPCIONES = ["PENDIENTE", "EN_CURSO", "COMPLETADO", "NO_APLICA"] as const;
+const ESTADO_OPCIONES = ["PENDIENTE", "EN_CURSO", "COMPLETADO", "NO_APLICA", "SIN_EVIDENCIA"] as const;
 
 interface InlineFormProps {
   etapa: EtapaAgrupada;

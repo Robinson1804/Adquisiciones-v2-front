@@ -86,6 +86,10 @@ function blockMessage(cod: string, prereqCod: string): string {
   return BLOCK_MESSAGES[`${cod}:${prereqCod}`] ?? `${prereqCod} debe estar COMPLETADO antes de registrar ${cod}`;
 }
 
+function estadoSatisfacePrereq(estado?: string): boolean {
+  return estado === 'COMPLETADO' || estado === 'NO_APLICA' || estado === 'SIN_EVIDENCIA';
+}
+
 /**
  * C3b — Returns actionability for a given stage given the full list of etapas.
  *
@@ -107,11 +111,8 @@ export function getEtapaActionability(
   for (const prereqCod of prereqs) {
     const prereqEtapa = allEtapas.find((e) => e.cod === prereqCod);
 
-    // Prereq stage not found or not completed/no-aplica
-    // NO_APLICA satisfies prereqs the same way COMPLETADO does (backend-mirrored)
-    const prereqSatisfied =
-      prereqEtapa?.estado === 'COMPLETADO' || prereqEtapa?.estado === 'NO_APLICA';
-    if (!prereqSatisfied) {
+    // NO_APLICA and SIN_EVIDENCIA satisfy prereqs the same way COMPLETADO does.
+    if (!prereqEtapa || !estadoSatisfacePrereq(prereqEtapa.estado)) {
       return {
         canRegister: false,
         blockedReason: blockMessage(etapa.cod, prereqCod),

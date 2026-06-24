@@ -173,6 +173,13 @@ describe("getEtapaActionability — R7 (E09 / E08)", () => {
     const result = getEtapaActionability(e09, [e08, e09]);
     expect(result.canRegister).toBe(true);
   });
+
+  it("E09 unblocked when E08 is SIN_EVIDENCIA", () => {
+    const e08 = makeEtapa('E08', { estado: 'SIN_EVIDENCIA' });
+    const e09 = makeEtapa('E09');
+    const result = getEtapaActionability(e09, [e08, e09]);
+    expect(result.canRegister).toBe(true);
+  });
 });
 
 // ----------------------------------------------------------------
@@ -328,6 +335,13 @@ describe("getEtapaActionability — main chain (flujo-real-otin-v2)", () => {
 
   it("E03 unblocked when E02b COMPLETADO", () => {
     const e02b = makeEtapa('E02b', { estado: 'COMPLETADO' });
+    const e03 = makeEtapa('E03');
+    const result = getEtapaActionability(e03, [e02b, e03]);
+    expect(result.canRegister).toBe(true);
+  });
+
+  it("E03 unblocked when E02b is SIN_EVIDENCIA", () => {
+    const e02b = makeEtapa('E02b', { estado: 'SIN_EVIDENCIA' });
     const e03 = makeEtapa('E03');
     const result = getEtapaActionability(e03, [e02b, e03]);
     expect(result.canRegister).toBe(true);

@@ -62,7 +62,13 @@ const RESULTADO_EVAL_OPCIONES = [
   'VALIDADO',
   'SIN_PRESUPUESTO',
 ] as const;
-const ESTADO_ETAPA_OPCIONES = ['PENDIENTE', 'EN_CURSO', 'COMPLETADO'] as const;
+const ESTADO_ETAPA_OPCIONES = ['PENDIENTE', 'EN_CURSO', 'COMPLETADO', 'SIN_EVIDENCIA'] as const;
+
+function estadoEtapaLabel(estado: string): string {
+  if (estado === 'EN_CURSO') return 'En Curso';
+  if (estado === 'SIN_EVIDENCIA') return 'Sin evidencia';
+  return estado.charAt(0) + estado.slice(1).toLowerCase();
+}
 
 export function ModalRegistroEtapa({
   procesoId,
@@ -339,7 +345,7 @@ export function ModalRegistroEtapa({
             >
               {ESTADO_ETAPA_OPCIONES.map((opt) => (
                 <option key={opt} value={opt}>
-                  {opt === 'EN_CURSO' ? 'En Curso' : opt.charAt(0) + opt.slice(1).toLowerCase()}
+                  {estadoEtapaLabel(opt)}
                 </option>
               ))}
             </select>

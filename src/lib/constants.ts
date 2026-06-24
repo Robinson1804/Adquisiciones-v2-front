@@ -25,6 +25,7 @@ export const COLORES_ESTADO = {
   CANCELADO:  { bg: '#FEE2E2', text: '#B91C1C', bar: '#DC2626' },
   OMITIDO:    { bg: '#F1F5F9', text: '#64748B', bar: '#94A3B8' },
   NO_APLICA:  { bg: '#F1F5F9', text: '#64748B', bar: '#94A3B8' },
+  SIN_EVIDENCIA: { bg: '#E5E7EB', text: '#4B5563', bar: '#9CA3AF' },
 } as const;
 
 // ============================================================

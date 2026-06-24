@@ -82,7 +82,9 @@ export function resumenFase(num: number, etapas: EtapaAgrupada[]): ResumenFase {
   const list = etapas.filter((e) => faseDeEtapa(e.cod) === num && etapaVisible(e));
   const cadena = list.filter((e) => !e.es_bucle);
   const total = cadena.length;
-  const completadas = cadena.filter((e) => e.estado === "COMPLETADO").length;
+  const completadas = cadena.filter(
+    (e) => e.estado === "COMPLETADO" || e.estado === "SIN_EVIDENCIA"
+  ).length;
   const enCurso = list.some((e) => e.estado === "EN_CURSO");
 
   let estado: EstadoFase = "PENDIENTE";

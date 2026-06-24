@@ -43,6 +43,7 @@ function EstadoPill({ estado }: { estado: string }) {
     estado === 'PENDIENTE'  ? 'Pendiente' :
     estado === 'OMITIDO'    ? 'Omitido' :
     estado === 'NO_APLICA'  ? 'No aplica' :
+    estado === 'SIN_EVIDENCIA' ? 'Sin evidencia' :
     estado;
   return (
     <span
@@ -183,7 +184,8 @@ export function EtapaCard({
   const yaRegistrada =
     etapa.estado === 'COMPLETADO' ||
     etapa.estado === 'EN_CURSO' ||
-    etapa.estado === 'NO_APLICA';
+    etapa.estado === 'NO_APLICA' ||
+    etapa.estado === 'SIN_EVIDENCIA';
   const accionLabel = !actionability.canRegister
     ? 'Bloqueado'
     : yaRegistrada

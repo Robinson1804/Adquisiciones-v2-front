@@ -43,7 +43,13 @@ export interface RondaBucle {
   dias: number | null;
 }
 
-export type EstadoEtapa = 'COMPLETADO' | 'EN_CURSO' | 'PENDIENTE' | 'OMITIDO' | 'NO_APLICA';
+export type EstadoEtapa =
+  | 'COMPLETADO'
+  | 'EN_CURSO'
+  | 'PENDIENTE'
+  | 'OMITIDO'
+  | 'NO_APLICA'
+  | 'SIN_EVIDENCIA';
 
 // Defined here (before EtapaAgrupada) to allow forward reference in firmas field.
 export type EstadoFirma = 'PENDIENTE' | 'RECIBIDO' | 'FIRMADO' | 'RECHAZADO';

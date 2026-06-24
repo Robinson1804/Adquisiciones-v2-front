@@ -37,6 +37,15 @@ interface RowState {
   editing: boolean;
 }
 
+function estadoAreaLabel(estado: string): string {
+  if (estado === 'NO_APLICA') return 'No aplica';
+  if (estado === 'SIN_EVIDENCIA') return 'Sin evidencia';
+  if (estado === 'EN_CURSO') return 'En Curso';
+  if (estado === 'COMPLETADO') return 'Completado';
+  if (estado === 'PENDIENTE') return 'Pendiente';
+  return estado;
+}
+
 export function TablaAreasE24({
   procesoId,
   filas,
@@ -158,7 +167,7 @@ export function TablaAreasE24({
               const fila = filas.find((f) => f.area_usuaria === area);
               const row: RowState = rowState[area] ?? { fecha: '', cmn: 'NO', editing: false };
               const estado = fila?.estado_etapa ?? 'PENDIENTE';
-              const estadoKey = (estado === 'COMPLETADO' ? 'COMPLETADO' : estado === 'EN_CURSO' ? 'EN_CURSO' : 'PENDIENTE') as keyof typeof COLORES_ESTADO;
+              const estadoKey = (estado in COLORES_ESTADO ? estado : 'PENDIENTE') as keyof typeof COLORES_ESTADO;
               const estadoColor = COLORES_ESTADO[estadoKey];
               const diasDemora = getDiasDemoraArea(
                 fila?.fecha_inicio ?? null,
@@ -197,7 +206,7 @@ export function TablaAreasE24({
                       className="text-xs px-2 py-0.5 rounded-lg font-medium"
                       style={{ backgroundColor: estadoColor.bg, color: estadoColor.text }}
                     >
-                      {estado}
+                      {estadoAreaLabel(estado)}
                     </span>
                   </td>
 
