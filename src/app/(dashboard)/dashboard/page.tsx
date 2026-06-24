@@ -5,7 +5,7 @@
  * Consolidates KPIs, stage-flow detail, donut chart and acquisitions table.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useMetricas, useFlujoProcesos, usePresupuesto } from "@/hooks/useDashboard";
 import { useProcesos } from "@/hooks/useProcesos";
@@ -100,7 +100,6 @@ export default function DashboardPage() {
   const [anno, setAnno] = useState(CURRENT_YEAR);
   const [unidad, setUnidad] = useState<string>("");
   const [tipo, setTipo]     = useState<TipoProceso | "">("");
-  const [selectedProcesoId, setSelectedProcesoId] = useState<number | null>(null);
 
   // ── data sources ──────────────────────────────────────────────────
   const metricas     = useMetricas(anno);
@@ -188,26 +187,12 @@ export default function DashboardPage() {
     return Array.from(seen).sort();
   }, [procesosList]);
 
-  // The acquisition selector list — filtered by tipo/unidad via the client-filtered set
+  // Phase board and table data — filtered by tipo/unidad via the client-filtered set
   const filteredFlujo = useMemo(() => {
     if (!unidad && !tipo) return flujoList;
     const allowedIds = new Set(procesosFiltrados.map((p) => p.id));
     return flujoList.filter((p) => allowedIds.has(p.id));
   }, [flujoList, procesosFiltrados, unidad, tipo]);
-
-  // Auto-select first proceso when list loads / changes
-  useEffect(() => {
-    if (filteredFlujo.length > 0) {
-      const firstId = filteredFlujo[0]?.id;
-      if (firstId !== undefined) {
-        setSelectedProcesoId((prev) =>
-          filteredFlujo.some((p) => p.id === prev) ? prev : firstId
-        );
-      }
-    } else {
-      setSelectedProcesoId(null);
-    }
-  }, [filteredFlujo]);
 
   // Merge flujo porcentaje with procesosQuery for the table
   const porcentajeById = useMemo(() => {
@@ -284,35 +269,13 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── 3. Acquisition selector ─────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor="selector-proceso" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-          Seleccionar adquisición:
-        </label>
-        <select
-          id="selector-proceso"
-          value={selectedProcesoId ?? ""}
-          onChange={(e) => setSelectedProcesoId(e.target.value ? Number(e.target.value) : null)}
-          className="flex-1 min-w-0 border border-outline rounded px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white"
-          disabled={filteredFlujo.length === 0}
-          aria-label="Seleccionar adquisición para ver flujo de etapas"
-        >
-          {filteredFlujo.length === 0 && (
-            <option value="">Sin procesos</option>
-          )}
-          {filteredFlujo.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.id_proceso} — {p.requerimiento}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* ── 3. Centerpiece — phase board ────────────────────────────── */}
+      <LineaEtapasHorizontal
+        procesos={filteredFlujo}
+        isLoading={flujo.isLoading || procesosQuery.isLoading}
+      />
 
-      {/* ── 4. Centerpiece — horizontal stage-flow ──────────────────── */}
-      <LineaEtapasHorizontal procesoId={selectedProcesoId} />
-
-      {/* ── 5. Bottom row: donut + table ────────────────────────────── */}
+      {/* ── 4. Bottom row: donut + table ────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT — donut */}
         <div className="lg:col-span-2">
@@ -364,10 +327,7 @@ export default function DashboardPage() {
                     return (
                       <tr
                         key={fp.id}
-                        className={[
-                          "hover:bg-gray-50 transition-colors",
-                          fp.id === selectedProcesoId ? "bg-blue-50" : "",
-                        ].join(" ")}
+                        className="hover:bg-gray-50 transition-colors"
                       >
                         <td className="px-4 py-3">
                           <div className="font-mono text-xs text-gray-400">{fp.id_proceso}</div>

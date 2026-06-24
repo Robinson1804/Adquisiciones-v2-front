@@ -73,6 +73,9 @@ const mockFlujo: FlujoProcesosResponse = {
       requerimiento: "Laptops DTDIS",
       estado: "EN PROCESO",
       fase_actual: "F3",
+      etapa_actual: "E10",
+      etapa_actual_nombre: "OTIN solicita anexo cert. + valida presupuesto (OTIN → Áreas)",
+      fase_actual_dias: 5,
       porcentaje: 60,
       fases: [
         { fase: "F1", label: "Requerimiento y TDR",        completada: true,  actual: false },

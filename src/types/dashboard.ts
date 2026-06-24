@@ -32,6 +32,9 @@ export interface ProcesoFlujo {
   requerimiento: string;
   estado: string;
   fase_actual: string | null;
+  etapa_actual: string | null;
+  etapa_actual_nombre: string | null;
+  fase_actual_dias: number | null;
   porcentaje: number;
   fases: FaseProgreso[];
 }

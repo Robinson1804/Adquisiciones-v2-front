@@ -1,6 +1,6 @@
 /**
  * Dashboard Gerencial — page component tests.
- * Verifies KPI cards, acquisition selector, table, and empty state.
+ * Verifies budget cards, phase board, table, and empty state.
  */
 
 import React from "react";
@@ -55,7 +55,7 @@ vi.mock("@/stores/authStore", () => ({
   }),
 }));
 
-import { getMetricas, getFlujoProcesos, getProcesos, getEtapas, getPresupuesto } from "@/lib/api";
+import { getMetricas, getFlujoProcesos, getProcesos, getPresupuesto } from "@/lib/api";
 
 const mockMetricas: Metricas = {
   anno: 2026,
@@ -75,6 +75,9 @@ const mockFlujoProcesos: FlujoProcesosResponse = {
       requerimiento: "Laptops para DTDIS",
       estado: "EN PROCESO",
       fase_actual: "F2",
+      etapa_actual: "E07",
+      etapa_actual_nombre: "Evaluación técnica (OEAS → OTIN)",
+      fase_actual_dias: 6,
       porcentaje: 40,
       fases: [
         { fase: "F1", label: "Requerimiento y TDR",        completada: true,  actual: false },
@@ -138,8 +141,6 @@ describe("S7 DashboardPage (Gerencial)", () => {
     vi.clearAllMocks();
     vi.mocked(getProcesos).mockResolvedValue(mockProcesos);
     vi.mocked(getPresupuesto).mockResolvedValue(mockPresupuesto);
-    // getEtapas is called by LineaEtapasHorizontal; return empty to keep tests simple
-    vi.mocked(getEtapas).mockResolvedValue({ etapas: [], progreso: { etapa_actual: null, porcentaje: 0, completadas: 0, total: 0 } });
   });
 
   it("renders the page title with the current year", () => {
@@ -174,14 +175,15 @@ describe("S7 DashboardPage (Gerencial)", () => {
     expect(screen.getByText(/150,000/)).toBeTruthy();
   });
 
-  it("shows acquisition in the selector and the table", async () => {
+  it("shows acquisition in the phase board and the table", async () => {
     vi.mocked(getMetricas).mockResolvedValue(mockMetricas);
     vi.mocked(getFlujoProcesos).mockResolvedValue(mockFlujoProcesos);
     render(<DashboardPage />, { wrapper: createWrapper() });
     await waitFor(() => {
-      expect(screen.getByText("Laptops para DTDIS")).toBeTruthy();
+      expect(screen.getAllByText("Laptops para DTDIS").length).toBeGreaterThan(0);
     });
-    expect(screen.getByText("2026-001")).toBeTruthy();
+    expect(screen.getAllByText("2026-001").length).toBeGreaterThan(0);
+    expect(screen.getByText("6 días")).toBeTruthy();
   });
 
   it("shows empty state when no procesos", async () => {
@@ -200,11 +202,14 @@ describe("S7 DashboardPage (Gerencial)", () => {
     });
   });
 
-  it("shows the acquisition selector dropdown", async () => {
+  it("shows the phase board without acquisition selector", async () => {
     vi.mocked(getMetricas).mockResolvedValue(mockMetricas);
     vi.mocked(getFlujoProcesos).mockResolvedValue(mockFlujoProcesos);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByLabelText(/Seleccionar adquisición/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Adquisiciones por fase/i)).toBeTruthy();
+    });
+    expect(screen.queryByLabelText(/Seleccionar adquisición/i)).toBeNull();
   });
 
   it("shows Modo Presentación link", () => {
