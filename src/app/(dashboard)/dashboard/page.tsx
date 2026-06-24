@@ -7,9 +7,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useMetricas, useFlujoProcesos } from "@/hooks/useDashboard";
+import { useMetricas, useFlujoProcesos, usePresupuesto } from "@/hooks/useDashboard";
 import { useProcesos } from "@/hooks/useProcesos";
-import { MetricCard } from "@/components/dashboard/MetricCard";
 import { SelectorAnno } from "@/components/dashboard/SelectorAnno";
 import { LineaEtapasHorizontal } from "@/components/dashboard/LineaEtapasHorizontal";
 import { DonutEstados } from "@/components/dashboard/DonutEstados";
@@ -44,6 +43,52 @@ const fmt = new Intl.NumberFormat("es-PE", {
   maximumFractionDigits: 0,
 });
 
+type BudgetMetricTone = "data" | "pending" | "ratio";
+
+interface BudgetMetricCardProps {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: BudgetMetricTone;
+}
+
+function BudgetMetricCard({
+  label,
+  value,
+  sub,
+  tone = "data",
+}: BudgetMetricCardProps) {
+  const toneClasses: Record<BudgetMetricTone, string> = {
+    data: "bg-blue-100 text-primary",
+    pending: "bg-gray-100 text-gray-500",
+    ratio: "bg-emerald-100 text-emerald-700",
+  };
+
+  return (
+    <div className="bg-white border border-outline shadow-card rounded-lg p-4 min-h-[108px] flex flex-col justify-between">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[11px] font-semibold text-gray-500 uppercase leading-tight">
+          {label}
+        </span>
+        <span
+          className={`mt-0.5 h-2 w-2 rounded-full flex-shrink-0 ${toneClasses[tone]}`}
+          aria-hidden="true"
+        />
+      </div>
+      <div>
+        <span className="block text-xl font-bold text-primary leading-tight break-words">
+          {value}
+        </span>
+        {sub && (
+          <span className="mt-1 block text-[11px] text-gray-400 leading-tight">
+            {sub}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Available unidad_resp values derived from loaded data
 const TIPOS: Array<{ value: TipoProceso | ""; label: string }> = [
   { value: "",         label: "Todos los tipos" },
@@ -60,12 +105,14 @@ export default function DashboardPage() {
   // ── data sources ──────────────────────────────────────────────────
   const metricas     = useMetricas(anno);
   const flujo        = useFlujoProcesos(anno);
+  const presupuesto  = usePresupuesto(anno);
   // Load procesos for the year; tipo/unidad are filtered client-side below
   // (the backend `area` filter targets areas_usuarias, not unidad_resp).
   // page_size capped at 100 by the backend (le=100).
   const procesosQuery = useProcesos({ anno, page_size: 100 });
 
   const m         = metricas.data;
+  const p         = presupuesto.data?.totales;
   const flujoList = flujo.data?.procesos ?? [];
   const procesosList = procesosQuery.data?.items ?? [];
 
@@ -81,8 +128,56 @@ export default function DashboardPage() {
   );
 
   // ── derived values ────────────────────────────────────────────────
-  const pimStr  = m?.pim_total  != null ? fmt.format(m.pim_total)              : "—";
-  const diasStr = m?.dias_promedio != null ? `${m.dias_promedio.toFixed(1)} días` : "—";
+  const moneyOrDash = (value: number | null | undefined) =>
+    value != null ? fmt.format(value) : "—";
+
+  const executionCards: BudgetMetricCardProps[] = [
+    {
+      label: "PIA",
+      value: "—",
+      sub: "sin fuente registrada",
+      tone: "pending",
+    },
+    {
+      label: "PIM",
+      value: moneyOrDash(p?.pim),
+      sub: "presupuesto modificado",
+    },
+    {
+      label: "Certificación",
+      value: moneyOrDash(p?.monto_cert_total),
+      sub: "certificaciones registradas",
+    },
+    {
+      label: "Compromiso Anual",
+      value: moneyOrDash(p?.monto_ocs),
+      sub: "monto O/S registrado",
+    },
+    {
+      label: "Atención de Compromiso Mensual",
+      value: "—",
+      sub: "sin fuente registrada",
+      tone: "pending",
+    },
+    {
+      label: "Devengado",
+      value: "—",
+      sub: "sin fuente registrada",
+      tone: "pending",
+    },
+    {
+      label: "Girado",
+      value: "—",
+      sub: "sin fuente registrada",
+      tone: "pending",
+    },
+    {
+      label: "Avance %",
+      value: "—",
+      sub: "requiere devengado/PIM",
+      tone: "ratio",
+    },
+  ];
 
   // Unidad options from loaded procesos
   const unidadOptions = useMemo(() => {
@@ -176,20 +271,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── 2. KPI cards ────────────────────────────────────────────── */}
-      {metricas.isError && (
+      {/* ── 2. Budget execution cards ───────────────────────────────── */}
+      {(metricas.isError || presupuesto.isError) && (
         <div className="bg-red-50 border border-red-200 rounded p-4 text-red-700 text-sm" role="alert">
-          Error al cargar métricas. Verifique su conexión.
+          Error al cargar indicadores. Verifique su conexión.
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <MetricCard label="PIM Total"       value={pimStr} />
-        <MetricCard label="Total Procesos"  value={m?.total ?? "—"} />
-        <MetricCard label="En Proceso"      value={m?.en_proceso ?? "—"} />
-        <MetricCard label="Culminados"      value={m?.culminados ?? "—"} />
-        <MetricCard label="Cancelados"      value={m?.cancelados ?? "—"} />
-        <MetricCard label="Días Promedio"   value={diasStr} sub="procesos culminados" />
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+        {executionCards.map((card) => (
+          <BudgetMetricCard key={card.label} {...card} />
+        ))}
       </div>
 
       {/* ── 3. Acquisition selector ─────────────────────────────────── */}
