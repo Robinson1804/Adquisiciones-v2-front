@@ -45,11 +45,17 @@ const fmt = new Intl.NumberFormat("es-PE", {
 
 type BudgetMetricTone = "data" | "pending" | "ratio";
 
-interface BudgetMetricCardProps {
+interface BudgetMetricDetail {
   label: string;
   value: string;
+}
+
+interface BudgetMetricCardProps {
+  label: string;
+  value?: string;
   sub?: string;
   tone?: BudgetMetricTone;
+  details?: BudgetMetricDetail[];
 }
 
 function BudgetMetricCard({
@@ -57,6 +63,7 @@ function BudgetMetricCard({
   value,
   sub,
   tone = "data",
+  details,
 }: BudgetMetricCardProps) {
   const toneClasses: Record<BudgetMetricTone, string> = {
     data: "bg-blue-100 text-primary",
@@ -76,10 +83,26 @@ function BudgetMetricCard({
         />
       </div>
       <div>
-        <span className="block text-xl font-bold text-primary leading-tight break-words">
-          {value}
-        </span>
-        {sub && (
+        {details ? (
+          <div className="space-y-1">
+            {details.map((detail) => (
+              <div
+                key={detail.label}
+                className="flex items-baseline justify-between gap-2 text-xs"
+              >
+                <span className="text-gray-500 leading-tight">{detail.label}</span>
+                <span className="font-bold text-primary whitespace-nowrap">
+                  {detail.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="block text-xl font-bold text-primary leading-tight break-words">
+            {value}
+          </span>
+        )}
+        {sub && !details && (
           <span className="mt-1 block text-[11px] text-gray-400 leading-tight">
             {sub}
           </span>
@@ -129,13 +152,15 @@ export default function DashboardPage() {
   // ── derived values ────────────────────────────────────────────────
   const moneyOrDash = (value: number | null | undefined) =>
     value != null ? fmt.format(value) : "—";
+  const percentOrDash = (value: number | null | undefined) =>
+    value != null ? `${value.toFixed(1)}%` : "—";
 
   const executionCards: BudgetMetricCardProps[] = [
     {
       label: "PIA",
-      value: "—",
-      sub: "sin fuente registrada",
-      tone: "pending",
+      value: moneyOrDash(p?.pia),
+      sub: "presupuesto inicial",
+      tone: p?.pia != null ? "data" : "pending",
     },
     {
       label: "PIM",
@@ -153,27 +178,32 @@ export default function DashboardPage() {
       sub: "monto O/S registrado",
     },
     {
-      label: "Atención de Compromiso Mensual",
-      value: "—",
-      sub: "sin fuente registrada",
-      tone: "pending",
-    },
-    {
-      label: "Devengado",
-      value: "—",
-      sub: "sin fuente registrada",
-      tone: "pending",
-    },
-    {
-      label: "Girado",
-      value: "—",
-      sub: "sin fuente registrada",
-      tone: "pending",
+      label: "Ejecución del gasto",
+      details: [
+        {
+          label: "Atención mensual",
+          value: moneyOrDash(p?.atencion_compromiso_mensual),
+        },
+        {
+          label: "Devengado",
+          value: moneyOrDash(p?.devengado),
+        },
+        {
+          label: "Girado",
+          value: moneyOrDash(p?.girado),
+        },
+      ],
+      tone:
+        p?.atencion_compromiso_mensual != null ||
+        p?.devengado != null ||
+        p?.girado != null
+          ? "data"
+          : "pending",
     },
     {
       label: "Avance %",
-      value: "—",
-      sub: "requiere devengado/PIM",
+      value: percentOrDash(p?.avance_ejecucion),
+      sub: "devengado/PIM",
       tone: "ratio",
     },
   ];
@@ -263,7 +293,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {executionCards.map((card) => (
           <BudgetMetricCard key={card.label} {...card} />
         ))}

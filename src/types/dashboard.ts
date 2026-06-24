@@ -35,6 +35,14 @@ export interface ProcesoFlujo {
   etapa_actual: string | null;
   etapa_actual_nombre: string | null;
   fase_actual_dias: number | null;
+  pia: number | null;
+  pim: number | null;
+  monto_cert_total: number | null;
+  monto_ocs: number | null;
+  atencion_compromiso_mensual: number | null;
+  devengado: number | null;
+  girado: number | null;
+  avance_ejecucion: number | null;
   porcentaje: number;
   fases: FaseProgreso[];
 }
@@ -68,20 +76,30 @@ export interface PresupuestoProceso {
   id_proceso: string;
   requerimiento: string;
   estado: string;
+  pia: number | null;
   pim: number | null;
   valor_em: number | null;
   monto_cert_total: number | null;
   monto_ocs: number | null;
+  atencion_compromiso_mensual: number | null;
+  devengado: number | null;
+  girado: number | null;
+  avance_ejecucion: number | null;
   var_em_vs_pim: number | null;
   var_cert_vs_em: number | null;
   var_ocs_vs_em: number | null;
 }
 
 export interface PresupuestoTotales {
+  pia: number | null;
   pim: number | null;
   valor_em: number | null;
   monto_cert_total: number | null;
   monto_ocs: number | null;
+  atencion_compromiso_mensual: number | null;
+  devengado: number | null;
+  girado: number | null;
+  avance_ejecucion: number | null;
 }
 
 export interface PresupuestoResponse {

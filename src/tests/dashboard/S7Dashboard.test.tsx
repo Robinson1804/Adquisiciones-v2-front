@@ -78,6 +78,14 @@ const mockFlujoProcesos: FlujoProcesosResponse = {
       etapa_actual: "E07",
       etapa_actual_nombre: "Evaluación técnica (OEAS → OTIN)",
       fase_actual_dias: 6,
+      pia: 200000,
+      pim: 250000,
+      monto_cert_total: 180000,
+      monto_ocs: 150000,
+      atencion_compromiso_mensual: 80000,
+      devengado: 75000,
+      girado: 70000,
+      avance_ejecucion: 30,
       porcentaje: 40,
       fases: [
         { fase: "F1", label: "Requerimiento y TDR",        completada: true,  actual: false },
@@ -116,10 +124,15 @@ const mockProcesos: PaginatedProcesos = {
 const mockPresupuesto: PresupuestoResponse = {
   anno: 2026,
   totales: {
+    pia: 200000,
     pim: 250000,
     valor_em: 210000,
     monto_cert_total: 180000,
     monto_ocs: 150000,
+    atencion_compromiso_mensual: 80000,
+    devengado: 75000,
+    girado: 70000,
+    avance_ejecucion: 30,
   },
   procesos: [],
 };
@@ -158,7 +171,8 @@ describe("S7 DashboardPage (Gerencial)", () => {
     expect(screen.getByText(/^PIM$/i)).toBeTruthy();
     expect(screen.getByText(/Certificación/i)).toBeTruthy();
     expect(screen.getByText(/Compromiso Anual/i)).toBeTruthy();
-    expect(screen.getByText(/Atención de Compromiso Mensual/i)).toBeTruthy();
+    expect(screen.getByText(/Ejecución del gasto/i)).toBeTruthy();
+    expect(screen.getByText(/Atención mensual/i)).toBeTruthy();
     expect(screen.getByText(/Devengado/i)).toBeTruthy();
     expect(screen.getByText(/Girado/i)).toBeTruthy();
     expect(screen.getByText(/Avance %/i)).toBeTruthy();
@@ -171,8 +185,11 @@ describe("S7 DashboardPage (Gerencial)", () => {
     await waitFor(() => {
       expect(screen.getByText(/250,000/)).toBeTruthy();
     });
+    expect(screen.getByText(/200,000/)).toBeTruthy();
     expect(screen.getByText(/180,000/)).toBeTruthy();
     expect(screen.getByText(/150,000/)).toBeTruthy();
+    expect(screen.getByText(/75,000/)).toBeTruthy();
+    expect(screen.getByText(/30.0%/)).toBeTruthy();
   });
 
   it("shows acquisition in the phase board and the table", async () => {

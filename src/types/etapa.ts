@@ -137,10 +137,14 @@ export interface BuclePayload {
 // Returned by GET /procesos/{id} or GET /procesos/{id}/montos (Design §WU-F4).
 // ============================================================
 export interface MontosProceso {
+  pia: number | null;
   valor_em: number | null;
   monto_cert_total: number | null;
   nro_ocs: string | null;
   monto_ocs: number | null;
+  atencion_compromiso_mensual: number | null;
+  devengado: number | null;
+  girado: number | null;
   plazo_entrega: number | null;
   fecha_inicio_srv: string | null;
 }
