@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DashboardPage from "@/app/(dashboard)/dashboard/page";
-import type { Metricas, FlujoProcesosResponse } from "@/types/dashboard";
+import type { Metricas, FlujoProcesosResponse, PresupuestoResponse } from "@/types/dashboard";
 import type { PaginatedProcesos } from "@/types";
 
 // Mock next/link
@@ -55,7 +55,7 @@ vi.mock("@/stores/authStore", () => ({
   }),
 }));
 
-import { getMetricas, getFlujoProcesos, getProcesos, getEtapas } from "@/lib/api";
+import { getMetricas, getFlujoProcesos, getProcesos, getEtapas, getPresupuesto } from "@/lib/api";
 
 const mockMetricas: Metricas = {
   anno: 2026,
@@ -110,6 +110,17 @@ const mockProcesos: PaginatedProcesos = {
   pages: 1,
 };
 
+const mockPresupuesto: PresupuestoResponse = {
+  anno: 2026,
+  totales: {
+    pim: 250000,
+    valor_em: 210000,
+    monto_cert_total: 180000,
+    monto_ocs: 150000,
+  },
+  procesos: [],
+};
+
 const emptyFlujo: FlujoProcesosResponse = { procesos: [] };
 const emptyProcesos: PaginatedProcesos = { items: [], total: 0, page: 1, page_size: 200, pages: 0 };
 
@@ -126,6 +137,7 @@ describe("S7 DashboardPage (Gerencial)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getProcesos).mockResolvedValue(mockProcesos);
+    vi.mocked(getPresupuesto).mockResolvedValue(mockPresupuesto);
     // getEtapas is called by LineaEtapasHorizontal; return empty to keep tests simple
     vi.mocked(getEtapas).mockResolvedValue({ etapas: [], progreso: { etapa_actual: null, porcentaje: 0, completadas: 0, total: 0 } });
   });
@@ -137,30 +149,29 @@ describe("S7 DashboardPage (Gerencial)", () => {
     expect(screen.getByText(/Dashboard Adquisiciones TIC/i)).toBeTruthy();
   });
 
-  it("shows all 6 KPI card labels", () => {
+  it("shows budget execution summary labels", () => {
     vi.mocked(getMetricas).mockResolvedValue(mockMetricas);
     vi.mocked(getFlujoProcesos).mockResolvedValue(mockFlujoProcesos);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText(/PIM Total/i)).toBeTruthy();
-    expect(screen.getByText(/Total Procesos/i)).toBeTruthy();
-    // Use getAllBy to handle multiple matches ("En Proceso" and "Culminados" also appear in the donut summary)
-    expect(screen.getAllByText(/En Proceso/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Culminados/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Cancelados/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Días Promedio/i)).toBeTruthy();
+    expect(screen.getByText(/^PIA$/i)).toBeTruthy();
+    expect(screen.getByText(/^PIM$/i)).toBeTruthy();
+    expect(screen.getByText(/Certificación/i)).toBeTruthy();
+    expect(screen.getByText(/Compromiso Anual/i)).toBeTruthy();
+    expect(screen.getByText(/Atención de Compromiso Mensual/i)).toBeTruthy();
+    expect(screen.getByText(/Devengado/i)).toBeTruthy();
+    expect(screen.getByText(/Girado/i)).toBeTruthy();
+    expect(screen.getByText(/Avance %/i)).toBeTruthy();
   });
 
-  it("shows metric card values after data loads", async () => {
+  it("shows budget values after data loads", async () => {
     vi.mocked(getMetricas).mockResolvedValue(mockMetricas);
     vi.mocked(getFlujoProcesos).mockResolvedValue(mockFlujoProcesos);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    // Values may appear in both KPI cards and the donut summary — use getAllBy
     await waitFor(() => {
-      expect(screen.getAllByText("8").length).toBeGreaterThanOrEqual(1); // Total
+      expect(screen.getByText(/250,000/)).toBeTruthy();
     });
-    expect(screen.getAllByText("4").length).toBeGreaterThanOrEqual(1);   // En Proceso
-    expect(screen.getAllByText("3").length).toBeGreaterThanOrEqual(1);   // Culminados
-    expect(screen.getAllByText("1").length).toBeGreaterThanOrEqual(1);   // Cancelados
+    expect(screen.getByText(/180,000/)).toBeTruthy();
+    expect(screen.getByText(/150,000/)).toBeTruthy();
   });
 
   it("shows acquisition in the selector and the table", async () => {

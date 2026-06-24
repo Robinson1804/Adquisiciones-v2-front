@@ -1,35 +1,49 @@
 "use client";
 
 /**
- * LineaEtapasHorizontal — Horizontal stage-flow for a selected acquisition.
- * Shows COMPLETADO + EN_CURSO non-loop stages connected left-to-right with chevrons.
- * Each card: actor badge, días count, stage code + name, start date.
+ * LineaEtapasHorizontal — phase summary for a selected acquisition.
+ * Groups the process stages into the 5 executive phases and shows progress,
+ * status and accumulated days per phase.
  */
 
 import React from "react";
 import { useEtapas } from "@/hooks/useEtapas";
-import { COLORES_ACTOR } from "@/lib/constants";
-import { formatFechaCorta, parseLocalDate } from "@/lib/fecha";
+import { FASES, faseDeEtapa } from "@/lib/fases";
+import { parseLocalDate } from "@/lib/fecha";
 import type { EtapaAgrupada } from "@/types/etapa";
+
+type PhaseStatus = "COMPLETADO" | "EN_CURSO" | "PENDIENTE";
+
+interface PhaseSummary {
+  num: number;
+  id: string;
+  corto: string;
+  total: number;
+  completadas: number;
+  estado: PhaseStatus;
+  dias: number | null;
+}
 
 /**
  * Compute chained days per etapa.
  *
  * "Days for stage i" = fecha_inicio[i+1] − fecha_inicio[i]  (how long until the next started)
  * For the last visible stage: use fecha_fin if available, otherwise 0.
- * Total = last visible fecha_inicio (or fecha_fin) − first visible fecha_inicio.
  *
  * This model avoids the "null dias" problem when fecha_fin hasn't been entered yet.
  */
-function computeChainedDias(etapas: EtapaAgrupada[]): { dias: (number | null)[]; total: number } {
-  const result: (number | null)[] = [];
+function computeChainedDiasByCod(etapas: EtapaAgrupada[]): Map<string, number | null> {
+  const result = new Map<string, number | null>();
 
   for (let i = 0; i < etapas.length; i++) {
     const etapa = etapas[i];
-    if (!etapa) { result.push(null); continue; }
+    if (!etapa) continue;
     const fila = etapa.filas[0] ?? null;
     const fechaInicioStr = fila?.fecha_inicio ?? null;
-    if (!fechaInicioStr) { result.push(null); continue; }
+    if (!fechaInicioStr) {
+      result.set(etapa.cod, null);
+      continue;
+    }
 
     const isLast = i === etapas.length - 1;
     if (isLast) {
@@ -39,9 +53,9 @@ function computeChainedDias(etapas: EtapaAgrupada[]): { dias: (number | null)[];
         const diff = Math.round(
           (parseLocalDate(fechaFinStr).getTime() - parseLocalDate(fechaInicioStr).getTime()) / 86_400_000
         );
-        result.push(diff >= 0 ? diff : 0);
+        result.set(etapa.cod, diff >= 0 ? diff : 0);
       } else {
-        result.push(0);
+        result.set(etapa.cod, 0);
       }
     } else {
       const nextEtapa = etapas[i + 1];
@@ -50,93 +64,162 @@ function computeChainedDias(etapas: EtapaAgrupada[]): { dias: (number | null)[];
         const diff = Math.round(
           (parseLocalDate(nextFechaStr).getTime() - parseLocalDate(fechaInicioStr).getTime()) / 86_400_000
         );
-        result.push(diff >= 0 ? diff : 0);
+        result.set(etapa.cod, diff >= 0 ? diff : 0);
       } else {
         // Next stage not yet started — fall back to stored dias, else null
-        result.push(fila?.dias ?? null);
+        result.set(etapa.cod, fila?.dias ?? null);
       }
     }
   }
 
-  // Total: last visible fecha_inicio (or fecha_fin) − first visible fecha_inicio
-  const firstEtapa = etapas[0];
-  const lastEtapa = etapas[etapas.length - 1];
-  const firstFechaStr = firstEtapa?.filas[0]?.fecha_inicio ?? null;
-  const lastFila = lastEtapa?.filas[0] ?? null;
-  const lastDateStr = lastFila?.fecha_fin ?? lastFila?.fecha_inicio ?? null;
-
-  let total = 0;
-  if (firstFechaStr && lastDateStr && firstFechaStr !== lastDateStr) {
-    const diff = Math.round(
-      (parseLocalDate(lastDateStr).getTime() - parseLocalDate(firstFechaStr).getTime()) / 86_400_000
-    );
-    if (diff > 0) total = diff;
-  } else {
-    // Fall back to summing chained dias (excluding nulls)
-    total = result.reduce<number>((sum, d) => sum + (d ?? 0), 0);
-  }
-
-  return { dias: result, total };
+  return result;
 }
 
 interface LineaEtapasHorizontalProps {
   procesoId: number | null;
 }
 
-function EtapaFlowCard({ etapa, dias }: { etapa: EtapaAgrupada; dias: number | null }) {
-  const actorKey = etapa.area_responsable as keyof typeof COLORES_ACTOR;
-  const color = COLORES_ACTOR[actorKey] ?? COLORES_ACTOR.OTIN;
-  const primeraFila = etapa.filas[0] ?? null;
-  const fechaInicio = primeraFila?.fecha_inicio ?? null;
+function isCompletedLike(etapa: EtapaAgrupada): boolean {
+  return etapa.estado === "COMPLETADO" || etapa.estado === "NO_APLICA";
+}
+
+function hasStarted(etapa: EtapaAgrupada): boolean {
+  return (
+    etapa.estado === "COMPLETADO" ||
+    etapa.estado === "EN_CURSO" ||
+    etapa.estado === "NO_APLICA" ||
+    etapa.filas.some((fila) => Boolean(fila.fecha_inicio || fila.fecha_fin))
+  );
+}
+
+function buildPhaseSummaries(etapas: EtapaAgrupada[]): PhaseSummary[] {
+  const cadena = etapas.filter((etapa) => !etapa.es_bucle);
+  const etapasConFechas = cadena.filter(hasStarted);
+  const diasByCod = computeChainedDiasByCod(etapasConFechas);
+
+  return FASES.map((fase) => {
+    const etapasFase = cadena.filter((etapa) => faseDeEtapa(etapa.cod) === fase.num);
+    const total = etapasFase.length;
+    const completadas = etapasFase.filter(isCompletedLike).length;
+    const faseIniciada =
+      completadas > 0 ||
+      etapasFase.some((etapa) => etapa.estado === "EN_CURSO" || hasStarted(etapa));
+
+    let estado: PhaseStatus = "PENDIENTE";
+    if (total > 0 && completadas === total) {
+      estado = "COMPLETADO";
+    } else if (faseIniciada) {
+      estado = "EN_CURSO";
+    }
+
+    let dias = 0;
+    let hasDias = false;
+    for (const etapa of etapasFase) {
+      const etapaDias = diasByCod.get(etapa.cod);
+      if (etapaDias != null) {
+        dias += etapaDias;
+        hasDias = true;
+      }
+    }
+
+    return {
+      num: fase.num,
+      id: fase.id,
+      corto: fase.corto,
+      total,
+      completadas,
+      estado,
+      dias: hasDias ? dias : null,
+    };
+  });
+}
+
+function diasLabel(summary: PhaseSummary): string {
+  if (summary.dias != null) return `${summary.dias} días`;
+  if (summary.estado === "EN_CURSO") return "En curso";
+  return "Sin iniciar";
+}
+
+function PhaseFlowCard({ summary }: { summary: PhaseSummary }) {
+  const progress = summary.total > 0
+    ? Math.round((summary.completadas / summary.total) * 100)
+    : 0;
+
+  const statusStyles: Record<PhaseStatus, {
+    card: string;
+    circle: string;
+    badge: string;
+    bar: string;
+  }> = {
+    COMPLETADO: {
+      card: "border-emerald-100 bg-emerald-50/40",
+      circle: "bg-emerald-600 text-white",
+      badge: "bg-emerald-100 text-emerald-700",
+      bar: "bg-emerald-600",
+    },
+    EN_CURSO: {
+      card: "border-blue-100 bg-blue-50/40",
+      circle: "bg-blue-100 text-blue-700",
+      badge: "bg-blue-100 text-blue-700",
+      bar: "bg-blue-600",
+    },
+    PENDIENTE: {
+      card: "border-gray-200 bg-white",
+      circle: "bg-gray-100 text-gray-500",
+      badge: "bg-gray-100 text-gray-500",
+      bar: "bg-gray-300",
+    },
+  };
+
+  const styles = statusStyles[summary.estado];
+  const icon = summary.estado === "COMPLETADO" ? "✓" : summary.num.toString();
 
   return (
     <article
-      className="flex-shrink-0 w-40 rounded-lg p-3 flex flex-col gap-1.5"
-      style={{
-        backgroundColor: color.bg,
-        border: `1px solid ${color.border}`,
-      }}
-      aria-label={`Etapa ${etapa.cod}: ${etapa.nombre}`}
+      className={`flex-shrink-0 w-64 rounded-lg border shadow-card p-4 ${styles.card}`}
+      aria-label={`Fase ${summary.num}: ${summary.corto}, ${summary.completadas} de ${summary.total} etapas`}
     >
-      {/* Actor badge */}
-      <span
-        className="text-xs font-semibold px-2 py-0.5 rounded self-start"
-        style={{ backgroundColor: color.border, color: color.text }}
-      >
-        {etapa.area_responsable}
-      </span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${styles.circle}`}
+            aria-hidden="true"
+          >
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <span className="block text-[11px] font-semibold uppercase text-gray-500 leading-none">
+              Fase {summary.num}
+            </span>
+            <span className="block mt-1 text-sm font-bold text-primary truncate">
+              {summary.corto}
+            </span>
+          </div>
+        </div>
 
-      {/* Days — big number */}
-      <div
-        className="text-2xl font-bold leading-none"
-        style={{ color: color.text }}
-        aria-label={`${dias ?? "—"} días`}
-      >
-        {dias !== null ? dias : "—"}
-        <span className="text-sm font-medium ml-1">días</span>
-      </div>
-
-      {/* Stage code + truncated name */}
-      <div className="flex flex-col gap-0.5">
-        <span
-          className="text-xs font-mono font-bold"
-          style={{ color: color.text }}
-        >
-          {etapa.cod}
-        </span>
-        <span
-          className="text-xs leading-tight line-clamp-2"
-          style={{ color: color.text }}
-          title={etapa.nombre}
-        >
-          {etapa.nombre}
+        <span className={`text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap ${styles.badge}`}>
+          {summary.completadas}/{summary.total}
         </span>
       </div>
 
-      {/* Start date */}
-      <span className="text-xs mt-auto" style={{ color: color.text, opacity: 0.8 }}>
-        {formatFechaCorta(fechaInicio)}
-      </span>
+      <div className="mt-4">
+        <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${styles.bar}`}
+            style={{ width: `${progress}%` }}
+            role="progressbar"
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Avance fase ${summary.num}`}
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-gray-500">{diasLabel(summary)}</span>
+        <span className="font-semibold text-gray-500">{progress}%</span>
+      </div>
     </article>
   );
 }
@@ -176,23 +259,15 @@ export function LineaEtapasHorizontal({ procesoId }: LineaEtapasHorizontalProps)
   }
 
   const etapas = data?.etapas ?? [];
-  const etapasVisibles = etapas.filter(
-    (e) =>
-      !e.es_bucle &&
-      (e.estado === "COMPLETADO" || e.estado === "EN_CURSO" || e.estado === "NO_APLICA")
-  );
+  const phaseSummaries = buildPhaseSummaries(etapas);
 
-  if (etapasVisibles.length === 0) {
+  if (etapas.length === 0) {
     return (
       <div className="bg-white border border-outline rounded-lg p-6 text-center text-gray-400 text-sm">
         Sin etapas iniciadas para esta adquisición.
       </div>
     );
   }
-
-  // BUG-6 fix: compute chained days (fecha_inicio[i+1] − fecha_inicio[i]) instead of
-  // reading the stored `dias` field which is null for in-progress stages.
-  const { dias: chainedDias, total: totalDias } = computeChainedDias(etapasVisibles);
 
   return (
     <div className="bg-white border border-outline shadow-card rounded-lg p-4">
@@ -201,14 +276,14 @@ export function LineaEtapasHorizontal({ procesoId }: LineaEtapasHorizontalProps)
           className="flex items-center gap-2 pb-2"
           style={{ minWidth: "max-content" }}
           role="list"
-          aria-label="Flujo de etapas"
+          aria-label="Progreso por fases"
         >
-          {etapasVisibles.map((etapa, idx) => (
-            <React.Fragment key={etapa.cod}>
+          {phaseSummaries.map((summary, idx) => (
+            <React.Fragment key={summary.id}>
               <div role="listitem">
-                <EtapaFlowCard etapa={etapa} dias={chainedDias[idx] ?? null} />
+                <PhaseFlowCard summary={summary} />
               </div>
-              {idx < etapasVisibles.length - 1 && (
+              {idx < phaseSummaries.length - 1 && (
                 <span
                   className="text-gray-400 font-bold text-lg flex-shrink-0"
                   aria-hidden="true"
@@ -218,15 +293,6 @@ export function LineaEtapasHorizontal({ procesoId }: LineaEtapasHorizontalProps)
               )}
             </React.Fragment>
           ))}
-
-          {/* Total días pill */}
-          <div className="flex-shrink-0 ml-4 bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 flex flex-col items-center gap-0.5">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Total
-            </span>
-            <span className="text-xl font-bold text-primary">{totalDias}</span>
-            <span className="text-xs text-gray-500">días</span>
-          </div>
         </div>
       </div>
     </div>
