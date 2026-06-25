@@ -89,7 +89,7 @@ export default function ProcesosPage() {
       : "-";
 
   return (
-    <div className="space-y-6">
+    <div className="module-typography space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-primary">
           Adquisiciones TIC {anno || ""}

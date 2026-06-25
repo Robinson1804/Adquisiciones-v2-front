@@ -292,7 +292,7 @@ export default function DetalleProceso() {
   const dias = proceso.dias_transcurridos ?? diasTranscurridos(proceso.fecha_creacion);
 
   return (
-    <div className="space-y-4">
+    <div className="module-typography space-y-4">
       {/* Breadcrumb */}
       <nav className="text-xs text-gray-500 flex items-center gap-1" aria-label="Migas de pan">
         <Link href="/procesos" className="text-primary hover:underline">

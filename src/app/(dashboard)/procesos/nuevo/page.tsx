@@ -341,7 +341,7 @@ export default function NuevoProcesoPage() {
   if (user?.rol === "VIEWER") return null;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="module-typography max-w-3xl mx-auto space-y-5">
       {/* Breadcrumb */}
       <nav className="text-xs text-gray-500" aria-label="Migas de pan">
         <span

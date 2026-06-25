@@ -11,3 +11,35 @@ body {
   color: var(--foreground);
   background: var(--background);
 }
+
+@layer utilities {
+  .font-display {
+    font-family: "Syne", var(--font-sans), system-ui, sans-serif;
+  }
+
+  .font-body {
+    font-family: "Inter", var(--font-sans), system-ui, sans-serif;
+  }
+
+  .font-code {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+}
+
+@layer components {
+  .module-typography {
+    font-family: "Inter", var(--font-sans), system-ui, sans-serif;
+  }
+
+  .module-typography :where(h1, h2, h3, h4, h5, h6, label, button, .type-display, .type-label) {
+    font-family: "Syne", var(--font-sans), system-ui, sans-serif;
+  }
+
+  .module-typography :where(p, dd, li, input, select, textarea, table, .type-body) {
+    font-family: "Inter", var(--font-sans), system-ui, sans-serif;
+  }
+
+  .module-typography :where(.font-mono, code, kbd, pre, .type-mono, [data-mono="true"]) {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+}
